@@ -267,3 +267,28 @@ def test_days_in_stage_current_and_historical(conn, brand_ids, stage_ids, user_i
     assert stage_names == {"Under Cutting", "Under Sewing"}
     cutting = next(h for h in historical if h["stage_name"] == "Under Cutting")
     assert cutting["last_left"] is not None
+
+
+def test_reopen_lot_clears_closed_at(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.move_pieces(
+        conn,
+        lot_id=lot_id,
+        from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=stage_ids["FI Done"],
+        qty=1000,
+        moved_by=user_id,
+    )
+    operations.mark_shipped(conn, lot_id=lot_id)
+    assert conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()["closed_at"] is not None
+
+    operations.reopen_lot(conn, lot_id=lot_id)
+    lot = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["closed_at"] is None
+    check_invariants(conn)  # reopened lot must still satisfy qty == total_qty
+
+
+def test_reopen_lot_refuses_when_not_shipped(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    with pytest.raises(operations.MoveError, match="not shipped"):
+        operations.reopen_lot(conn, lot_id=lot_id)

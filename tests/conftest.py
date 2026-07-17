@@ -1,6 +1,7 @@
 import sqlite3
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import db, seed
 
@@ -32,3 +33,13 @@ def brand_ids(conn):
 def user_id(conn):
     row = conn.execute("SELECT id FROM users LIMIT 1").fetchone()
     return row["id"]
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DPR_DATA_DIR", str(tmp_path))
+    from app.web import create_app
+
+    app = create_app()
+    with TestClient(app) as test_client:
+        yield test_client

@@ -19,6 +19,11 @@ SHEET_COLUMNS: dict[str, dict[str, int | None]] = {
     "ARVIND": {"ct": 1, "code": 3, "wash": None, "fabric": 4, "qty": 5, "status": 6, "fi_date": 7, "fabric_date": 8},
 }
 
+# The exact numbers the one known JUNE_DPR.xlsx fixture reconciles to. These are
+# NOT enforced at runtime (a repeat import of a different, later sheet would have
+# different real totals) - they exist purely so the test suite can pin the
+# importer's correctness against a known-good fixture. See
+# tests/test_importer_reconciliation.py.
 EXPECTED_TOTAL_LOTS = 135
 EXPECTED_TOTAL_PIECES = 90908
 EXPECTED_PER_BRAND = {
@@ -32,27 +37,14 @@ EXPECTED_PER_BRAND = {
 }
 
 
-class ImportReconciliationError(Exception):
-    def __init__(self, result: "ImportResult"):
-        self.result = result
-        diffs = []
-        if result.total_lots != EXPECTED_TOTAL_LOTS:
-            diffs.append(f"total lots: got {result.total_lots}, expected {EXPECTED_TOTAL_LOTS}")
-        if result.total_pieces != EXPECTED_TOTAL_PIECES:
-            diffs.append(f"total pieces: got {result.total_pieces}, expected {EXPECTED_TOTAL_PIECES}")
-        for brand, expected_qty in EXPECTED_PER_BRAND.items():
-            got = result.per_brand.get(brand, 0)
-            if got != expected_qty:
-                diffs.append(f"{brand}: got {got}, expected {expected_qty}")
-        super().__init__("Import did not reconcile: " + "; ".join(diffs))
-
-
 @dataclass
 class ImportResult:
     total_lots: int = 0
     total_pieces: int = 0
     per_brand: dict[str, int] = field(default_factory=dict)
     unmapped_statuses: list[tuple[str, str, str]] = field(default_factory=list)  # (sheet, ct, raw_status)
+    skipped_duplicates: list[tuple[str, str]] = field(default_factory=list)  # (sheet, ct)
+    replaced: bool = False
 
 
 def _cell(row: tuple, col: int | None):
@@ -69,24 +61,51 @@ def _as_date(value) -> str | None:
     return str(value)
 
 
-def import_workbook(path: str, conn: sqlite3.Connection, *, moved_by: int | None = None) -> ImportResult:
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+def import_workbook(
+    path: str,
+    conn: sqlite3.Connection,
+    *,
+    wipe_existing: bool = False,
+    moved_by: int | None = None,
+) -> ImportResult:
+    """Import every brand sheet from the workbook at `path`.
 
-    brand_ids = {
-        row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM brands")
-    }
-    stage_ids = {
-        row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM stages")
-    }
-    sub_brand_ids = {
-        (row["brand_id"], row["name"].upper()): row["id"]
-        for row in conn.execute("SELECT id, brand_id, name FROM sub_brands")
-    }
+    Rows whose status text doesn't map to a known stage are skipped and listed in
+    `unmapped_statuses`. Rows whose CT number already exists in the app are always
+    skipped and listed in `skipped_duplicates` - never silently duplicated or
+    overwritten. Pass `wipe_existing=True` to clear all lots/positions/movements
+    first (a full "Replace" import); the default is an additive "Add" import.
+
+    There is no hard-coded expected-totals gate here - the caller (the /import
+    route) shows `ImportResult`'s own computed totals so the owner can eyeball them
+    against the paper sheet. See EXPECTED_* above for why: those numbers are only
+    ever correct for the one specific fixture file, not for repeat imports of an
+    updated sheet.
+    """
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
 
     result = ImportResult()
     seed_date = datetime.now(timezone.utc).isoformat()
 
     with db.transaction(conn):
+        if wipe_existing:
+            conn.execute("DELETE FROM lots")
+            result.replaced = True
+
+        brand_ids = {
+            row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM brands")
+        }
+        stage_ids = {
+            row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM stages")
+        }
+        sub_brand_ids = {
+            (row["brand_id"], row["name"].upper()): row["id"]
+            for row in conn.execute("SELECT id, brand_id, name FROM sub_brands")
+        }
+        existing_cts = {
+            row["ct_number"] for row in conn.execute("SELECT ct_number FROM lots")
+        }
+
         for sheet_name, columns in SHEET_COLUMNS.items():
             ws = wb[sheet_name]
             brand_id = brand_ids[sheet_name]
@@ -100,9 +119,16 @@ def import_workbook(path: str, conn: sqlite3.Connection, *, moved_by: int | None
                 if not status_raw or "total" in str(status_raw).lower():
                     continue
 
-                stage_name = map_status_to_stage(str(status_raw))
                 ct = _cell(row, columns["ct"])
                 ct_number = str(ct) if ct is not None else ""
+
+                # Some real rows (a few ARVIND/PEPE lots) genuinely have a blank CT
+                # number - never treat blanks as duplicates of each other.
+                if ct_number and ct_number in existing_cts:
+                    result.skipped_duplicates.append((sheet_name, ct_number))
+                    continue
+
+                stage_name = map_status_to_stage(str(status_raw))
                 if stage_name is None:
                     result.unmapped_statuses.append((sheet_name, ct_number, str(status_raw)))
                     continue
@@ -149,19 +175,12 @@ def import_workbook(path: str, conn: sqlite3.Connection, *, moved_by: int | None
                     (lot_id, stage_id, int(qty), seed_date, moved_by, "opening import"),
                 )
 
+                if ct_number:
+                    existing_cts.add(ct_number)
                 result.total_lots += 1
                 result.total_pieces += int(qty)
                 sheet_pieces += int(qty)
 
             result.per_brand[sheet_name] = sheet_pieces
-
-        if (
-            result.total_lots != EXPECTED_TOTAL_LOTS
-            or result.total_pieces != EXPECTED_TOTAL_PIECES
-            or result.per_brand != EXPECTED_PER_BRAND
-        ):
-            # Raising inside the transaction rolls back every inserted lot/position/
-            # movement, so a failed reconciliation leaves the database untouched.
-            raise ImportReconciliationError(result)
 
     return result

@@ -1,0 +1,20 @@
+{% if toast_message %}
+<div class="toast {{ toast_class or 'success-banner' }}" id="toast-{{ toast_id }}">
+  {{ toast_message }}
+  {% if toast_undo_url %}
+  <form class="inline" method="post" action="{{ toast_undo_url }}"
+        {% if toast_undo_htmx %}hx-post="{{ toast_undo_url }}" hx-target="#side-panel" hx-swap="innerHTML"{% endif %}>
+    {% for k, v in (toast_undo_fields or {}).items() %}
+    <input type="hidden" name="{{ k }}" value="{{ v }}">
+    {% endfor %}
+    <button type="submit">Undo</button>
+  </form>
+  {% endif %}
+</div>
+<script>
+setTimeout(function(){
+  var t = document.getElementById("toast-{{ toast_id }}");
+  if (t && t.parentNode) t.parentNode.removeChild(t);
+}, 6000);
+</script>
+{% endif %}

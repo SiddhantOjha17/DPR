@@ -1,32 +1,119 @@
 {% extends "base.html" %}
 {% block title %}DPR — Analytics{% endblock %}
 {% block content %}
-<div style="width:100%; display:flex; flex-direction:column; gap:28px;">
-  <h2>Analytics</h2>
-
-  <section>
-    <h3>Longest time in current stage</h3>
-    <p style="color:#666">Sorted longest first. No thresholds, no alerts &mdash; just the list.</p>
-    <table class="dpr-table">
-      <thead><tr><th>Brand</th><th>CT</th><th>Stage</th><th>Qty</th><th>Days</th></tr></thead>
-      <tbody>
-        {% for r in longest_in_stage[:30] %}
-        <tr><td>{{ r.brand_name }}</td><td>{{ r.ct_number }}</td><td>{{ r.stage_name }}</td><td>{{ r.qty }}</td><td>{{ r.days }}</td></tr>
+<div style="width:100%; display:flex; flex-direction:column; gap:32px;">
+  <div class="analytics-header">
+    <h2>Analytics</h2>
+    <label>Brand:
+      <select name="brand" onchange="window.location='/analytics' + (this.value ? '?brand=' + this.value : '')">
+        <option value="">All brands</option>
+        {% for b in brands %}
+        <option value="{{ b.id }}" {% if selected_brand == b.id %}selected{% endif %}>{{ b.name }}</option>
         {% endfor %}
-      </tbody>
-    </table>
+      </select>
+    </label>
+  </div>
+
+  <section class="kpi-row">
+    <div class="kpi-tile">
+      <div class="kpi-value">{{ kpis.open_lots_count }}</div>
+      <div class="kpi-label">Open lots</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value">{{ "{:,}".format(kpis.pieces_in_pipeline) }}</div>
+      <div class="kpi-label">Pieces in pipeline</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value">{{ "{:,}".format(kpis.shipped_this_week) }}</div>
+      <div class="kpi-label">Pieces shipped this week</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value">{{ kpis.avg_cycle_time_days if kpis.avg_cycle_time_days is not none else "—" }}</div>
+      <div class="kpi-label">
+        Avg days, Fabric Received &rarr; shipped
+        {% if kpis.avg_cycle_time_days is none %}<br><span class="chart-empty">(need 3+ shipped lots)</span>{% endif %}
+      </div>
+    </div>
   </section>
 
   <section>
-    <h3>FI date risk <span style="font-weight:normal; color:#a15c00;">(estimate — noisy until ~2 months of history exist)</span></h3>
+    <h3>Where things are stuck</h3>
+    <p class="section-note">Average days spent per stage &mdash; longest bar is the biggest bottleneck.</p>
+    <div class="chart-container">{{ avg_days_chart | safe }}</div>
+
+    <details style="margin-top:10px;">
+      <summary>Itemized: longest time in current stage</summary>
+      <p class="section-note">Sorted longest first. No thresholds, no alerts &mdash; just the list.</p>
+      <div class="table-scroll">
+      <table class="dpr-table">
+        <thead><tr><th>Brand</th><th>CT</th><th>Stage</th><th>Qty</th><th>Days</th></tr></thead>
+        <tbody>
+          {% for r in longest_in_stage[:30] %}
+          <tr><td>{{ r.brand_name }}</td><td>{{ r.ct_number }}</td><td>{{ r.stage_name }}</td><td>{{ r.qty }}</td><td>{{ r.days }}</td></tr>
+          {% endfor %}
+          {% if not longest_in_stage %}
+          <tr><td colspan="5">No open lots.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h3>Flow over time <span class="section-note-inline">(last {{ trend_weeks }} weeks)</span></h3>
+    <div style="display:flex; gap:32px; flex-wrap:wrap;">
+      <div style="flex:2; min-width:320px;">
+        <p class="section-note">WIP by stage &mdash; lighter = earlier stage, darker = closer to done.</p>
+        <div class="chart-container">{{ wip_chart | safe }}</div>
+        <details style="margin-top:10px;">
+          <summary>Exact numbers</summary>
+          <div class="table-scroll">
+          <table class="dpr-table">
+            <thead><tr><th>Date</th>{% for stage in stage_order %}<th>{{ stage }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for snap in wip_over_time %}
+              <tr><td>{{ snap.date }}</td>{% for stage in stage_order %}<td>{{ snap.by_stage.get(stage, "") }}</td>{% endfor %}</tr>
+              {% endfor %}
+              {% if not wip_over_time %}
+              <tr><td colspan="{{ stage_order|length + 1 }}">No movement history in this window.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+          </div>
+        </details>
+      </div>
+      <div style="flex:1; min-width:260px;">
+        <p class="section-note">Pieces reaching FI Done per week.</p>
+        <div class="chart-container">{{ throughput_chart | safe }}</div>
+        <details style="margin-top:10px;">
+          <summary>Exact numbers</summary>
+          <table class="settings-table">
+            <thead><tr><th>Week</th><th>Pieces</th></tr></thead>
+            <tbody>
+              {% for r in throughput %}
+              <tr><td>{{ r.week }}</td><td>{{ r.qty }}</td></tr>
+              {% endfor %}
+              {% if not throughput %}
+              <tr><td colspan="2">No lots reached FI Done in this window.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>What's at risk <span class="section-note-inline">(estimate &mdash; noisy until ~2 months of history exist)</span></h3>
     <table class="dpr-table">
-      <thead><tr><th>Brand</th><th>CT</th><th>FI Date</th><th>Predicted completion</th><th>At risk?</th></tr></thead>
+      <thead><tr><th>Brand</th><th>CT</th><th>FI Date</th><th>Predicted completion</th><th>Status</th></tr></thead>
       <tbody>
         {% for r in fi_risk %}
-        <tr>
+        <tr class="{{ 'at-risk' if r.at_risk else '' }}">
           <td>{{ r.brand_name }}</td><td>{{ r.ct_number }}</td><td>{{ r.fi_date }}</td>
           <td>{{ r.predicted_completion }}</td>
-          <td>{{ "Yes" if r.at_risk else "No" }}</td>
+          <td>{% if r.at_risk %}&#9888; At risk{% else %}On track{% endif %}</td>
         </tr>
         {% endfor %}
         {% if not fi_risk %}
@@ -36,63 +123,30 @@
     </table>
   </section>
 
+  {% if heatmap %}
   <section>
-    <h3>Average days per stage</h3>
-    <table class="settings-table">
-      <thead><tr><th>Stage</th><th>Avg days</th></tr></thead>
+    <h3>Per-brand comparison</h3>
+    <p class="section-note">Average days per stage, per brand. Darker = longer.</p>
+    <div class="table-scroll">
+    <table class="dpr-table heatmap-table">
+      <thead><tr><th>Brand</th>{% for stage in heatmap.stage_order %}<th>{{ stage }}</th>{% endfor %}</tr></thead>
       <tbody>
-        {% for stage, avg in avg_days.items() %}
-        <tr><td>{{ stage }}</td><td>{{ avg }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
-
-  <section>
-    <h3>Average days per stage, per brand</h3>
-    {% for brand, stages in avg_days_per_brand.items() %}
-    {% if stages %}
-    <h4>{{ brand }}</h4>
-    <table class="settings-table">
-      <thead><tr><th>Stage</th><th>Avg days</th></tr></thead>
-      <tbody>
-        {% for stage, avg in stages.items() %}
-        <tr><td>{{ stage }}</td><td>{{ avg }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-    {% endfor %}
-  </section>
-
-  <section>
-    <h3>Throughput — pieces reaching FI Done per week</h3>
-    <table class="settings-table">
-      <thead><tr><th>Week</th><th>Pieces</th></tr></thead>
-      <tbody>
-        {% for r in throughput %}
-        <tr><td>{{ r.week }}</td><td>{{ r.qty }}</td></tr>
-        {% endfor %}
-        {% if not throughput %}
-        <tr><td colspan="2">No lots have reached FI Done yet.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-  </section>
-
-  <section>
-    <h3>WIP by stage over time</h3>
-    <table class="dpr-table">
-      <thead><tr><th>Date</th><th>By stage</th></tr></thead>
-      <tbody>
-        {% for snap in wip_over_time[-30:] %}
+        {% for row in heatmap.rows %}
         <tr>
-          <td>{{ snap.date }}</td>
-          <td>{% for stage, qty in snap.by_stage.items() %}{{ stage }}: {{ qty }}&nbsp;&nbsp; {% endfor %}</td>
+          <td>{{ row.brand_name }}</td>
+          {% for cell in row.cells %}
+          {% if cell.value is not none %}
+          <td style="background-color:{{ cell.bg }}; color:{{ cell.fg }};">{{ cell.value }}</td>
+          {% else %}
+          <td class="heatmap-empty">—</td>
+          {% endif %}
+          {% endfor %}
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </section>
+  {% endif %}
 </div>
 {% endblock %}

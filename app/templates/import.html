@@ -1,31 +1,88 @@
 {% extends "base.html" %}
 {% block title %}DPR — Import{% endblock %}
 {% block content %}
-<div style="max-width:600px">
-  <h2>Import Excel workbook</h2>
-  <p>Upload the DPR workbook (one sheet per brand: SPYKAR, MONTE CARLO, PEPE, KKCL, RAYMOND, BENETTON, ARVIND).
-     This only makes sense on an empty database — it is meant for first-run setup.</p>
+<div style="max-width:700px; display:flex; flex-direction:column; gap:28px;">
+  <div>
+    <h2>Import Excel workbook</h2>
+    <p>Upload a DPR workbook.</p>
 
-  {% if error %}
-  <div class="error-banner">{{ error }}</div>
-  {% endif %}
-  {% if result %}
-  <div class="success-banner">
-    Imported {{ result.total_lots }} lots, {{ result.total_pieces }} pieces total.
-    <table class="settings-table">
-      <thead><tr><th>Brand</th><th>Pieces</th></tr></thead>
-      <tbody>
-        {% for brand, qty in result.per_brand.items() %}
-        <tr><td>{{ brand }}</td><td>{{ qty }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+    {% include "_toast.html" %}
+
+    {% if result %}
+    <div class="success-banner">
+      {% if result.replaced %}Replaced existing data. {% endif %}
+      Imported {{ result.total_lots }} lots, {{ result.total_pieces }} pieces.
+      <table class="settings-table">
+        <thead><tr><th>Brand</th><th>Pieces</th></tr></thead>
+        <tbody>
+          {% for brand, qty in result.per_brand.items() %}
+          <tr><td>{{ brand }}</td><td>{{ qty }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if result.skipped_duplicates %}
+      <p><strong>{{ result.skipped_duplicates|length }} row(s) skipped — CT already exists:</strong></p>
+      <ul>
+        {% for sheet, ct in result.skipped_duplicates %}<li>{{ sheet }}: {{ ct }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if result.unmapped_statuses %}
+      <p><strong>{{ result.unmapped_statuses|length }} row(s) skipped — status text not recognized:</strong></p>
+      <ul>
+        {% for sheet, ct, status in result.unmapped_statuses %}<li>{{ sheet }}: {{ ct }} — "{{ status }}"</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/import" enctype="multipart/form-data" style="margin-top:14px;">
+      <input type="file" name="file" accept=".xlsx" required><br><br>
+      {% if existing_lot_count > 0 %}
+      <p>There are already {{ existing_lot_count }} lots in the app. Choose how to import this file:</p>
+      <button type="submit" name="mode" value="add"
+        onclick="return confirm('Add these rows to the existing {{ existing_lot_count }} lots? Any row whose CT number already exists will be skipped, never overwritten.');">
+        Add to existing data
+      </button>
+      <button type="submit" name="mode" value="replace" style="background:#b3413a;color:white;"
+        onclick="return confirm('This deletes all {{ existing_lot_count }} existing lots and replaces them with this file. This cannot be undone from the app. Continue?');">
+        Replace existing data
+      </button>
+      {% else %}
+      <button type="submit" name="mode" value="add">Import</button>
+      {% endif %}
+    </form>
   </div>
-  {% endif %}
 
-  <form method="post" action="/import" enctype="multipart/form-data">
-    <input type="file" name="file" accept=".xlsx" required>
-    <button type="submit">Import</button>
-  </form>
+  <div>
+    <h2>Add a single lot</h2>
+    <form method="post" action="/lots/add">
+      <label>Brand
+        <select name="brand_id" required>
+          {% for b in brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Sub-brand (optional)
+        <select name="sub_brand_id">
+          <option value="">—</option>
+          {% for sb in sub_brands %}<option value="{{ sb.id }}">{{ sb.brand_name }} — {{ sb.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>CT number <input type="text" name="ct_number" required></label>
+      <label>Code <input type="text" name="material_code"></label>
+      <label>Fabric <input type="text" name="fabric"></label>
+      <label>Wash <input type="text" name="wash"></label>
+      <label>Qty <input type="number" name="total_qty" min="1" required></label>
+      <label>Starting stage
+        <select name="starting_stage_id" required>
+          {% for s in stages %}<option value="{{ s.id }}" {% if s.name == "Fabric Received" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>FI date <input type="date" name="fi_date"></label>
+      <label>Fab date <input type="date" name="fabric_date"></label>
+      <label>Remark <input type="text" name="remark"></label>
+      <button type="submit">Add lot</button>
+    </form>
+  </div>
 </div>
 {% endblock %}

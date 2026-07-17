@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
-from app.web import base_context, get_conn, templates
+from app.web import base_context, get_conn, parse_optional_int, templates
 
 router = APIRouter()
 
@@ -73,13 +73,14 @@ def fetch_grouped_positions(conn: sqlite3.Connection, brand_id: int | None) -> d
 
 
 @router.get("/", response_class=HTMLResponse)
-def main_screen(request: Request, brand: int | None = None, conn=Depends(get_conn)):
+def main_screen(request: Request, brand: str = "", conn=Depends(get_conn)):
+    brand_id = parse_optional_int(brand)
     brands = conn.execute("SELECT id, name FROM brands WHERE active = 1 ORDER BY name").fetchall()
-    data = fetch_grouped_positions(conn, brand)
+    data = fetch_grouped_positions(conn, brand_id)
     context = {
         **base_context(request, conn),
         "brands": brands,
-        "selected_brand": brand,
+        "selected_brand": brand_id,
         **data,
     }
     if request.headers.get("hx-request"):

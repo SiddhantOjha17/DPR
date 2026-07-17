@@ -1,0 +1,33 @@
+  <h3>Add a lot</h3>
+  {% if error_message %}<div class="error-banner">{{ error_message }}</div>{% endif %}
+  {% include "_toast.html" %}
+  <div class="section">
+    <form hx-post="/lots/add" hx-target="#side-panel" hx-swap="innerHTML">
+      <input type="hidden" name="brand_filter" value="{{ brand or '' }}">
+      <label>Brand
+        <select name="brand_id" required>
+          {% for b in brands %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Sub-brand (optional)
+        <select name="sub_brand_id">
+          <option value="">—</option>
+          {% for sb in sub_brands %}<option value="{{ sb.id }}">{{ sb.brand_name }} — {{ sb.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>CT number <input type="text" name="ct_number" required></label>
+      <label>Code <input type="text" name="material_code"></label>
+      <label>Fabric <input type="text" name="fabric"></label>
+      <label>Wash <input type="text" name="wash"></label>
+      <label>Qty <input type="number" name="total_qty" min="1" required></label>
+      <label>Starting stage
+        <select name="starting_stage_id" required>
+          {% for s in stages %}<option value="{{ s.id }}" {% if s.name == "Fabric Received" %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>FI date <input type="date" name="fi_date"></label>
+      <label>Fab date <input type="date" name="fabric_date"></label>
+      <label>Remark <input type="text" name="remark"></label>
+      <button type="submit">Add lot</button>
+    </form>
+  </div>

@@ -5,17 +5,23 @@ from datetime import date, datetime, timedelta, timezone
 from app import operations
 
 
-def longest_time_in_stage(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute(
+def longest_time_in_stage(conn: sqlite3.Connection, brand_id: int | None = None) -> list[dict]:
+    query = (
         "SELECT p.lot_id, p.stage_id, p.qty, p.entered_at, s.name AS stage_name, "
         "l.ct_number, b.name AS brand_name "
         "FROM positions p "
         "JOIN lots l ON l.id = p.lot_id "
         "JOIN stages s ON s.id = p.stage_id "
         "JOIN brands b ON b.id = l.brand_id "
-        "WHERE l.closed_at IS NULL "
-        "ORDER BY p.entered_at ASC"
-    ).fetchall()
+        "WHERE l.closed_at IS NULL"
+    )
+    params: list = []
+    if brand_id is not None:
+        query += " AND b.id = ?"
+        params.append(brand_id)
+    query += " ORDER BY p.entered_at ASC"
+
+    rows = conn.execute(query, params).fetchall()
     now = datetime.now(timezone.utc)
     result = [
         {
@@ -32,8 +38,8 @@ def longest_time_in_stage(conn: sqlite3.Connection) -> list[dict]:
     return result
 
 
-def avg_days_per_stage(conn: sqlite3.Connection) -> dict[str, float]:
-    return _avg_days_per_stage(conn, brand_id=None)
+def avg_days_per_stage(conn: sqlite3.Connection, brand_id: int | None = None) -> dict[str, float]:
+    return _avg_days_per_stage(conn, brand_id=brand_id)
 
 
 def avg_days_per_stage_per_brand(conn: sqlite3.Connection) -> dict[str, dict[str, float]]:
@@ -62,12 +68,18 @@ def _avg_days_per_stage(conn: sqlite3.Connection, brand_id: int | None) -> dict[
     }
 
 
-def throughput(conn: sqlite3.Connection) -> list[dict]:
+def throughput(conn: sqlite3.Connection, brand_id: int | None = None) -> list[dict]:
     fi_done = conn.execute("SELECT id FROM stages WHERE name = 'FI Done'").fetchone()["id"]
-    rows = conn.execute(
-        "SELECT moved_at, qty FROM movements WHERE to_stage_id = ? AND from_stage_id IS NOT NULL",
-        (fi_done,),
-    ).fetchall()
+    query = (
+        "SELECT m.moved_at, m.qty FROM movements m JOIN lots l ON l.id = m.lot_id "
+        "WHERE m.to_stage_id = ? AND m.from_stage_id IS NOT NULL"
+    )
+    params: list = [fi_done]
+    if brand_id is not None:
+        query += " AND l.brand_id = ?"
+        params.append(brand_id)
+    rows = conn.execute(query, params).fetchall()
+
     weekly: dict[str, int] = defaultdict(int)
     for r in rows:
         moved = datetime.fromisoformat(r["moved_at"])
@@ -76,11 +88,15 @@ def throughput(conn: sqlite3.Connection) -> list[dict]:
     return [{"week": week, "qty": qty} for week, qty in sorted(weekly.items())]
 
 
-def wip_over_time(conn: sqlite3.Connection) -> list[dict]:
-    movements = conn.execute(
-        "SELECT from_stage_id, to_stage_id, qty, moved_at FROM movements "
-        "ORDER BY moved_at ASC, id ASC"
-    ).fetchall()
+def wip_over_time(conn: sqlite3.Connection, brand_id: int | None = None) -> list[dict]:
+    query = "SELECT m.from_stage_id, m.to_stage_id, m.qty, m.moved_at FROM movements m"
+    params: list = []
+    if brand_id is not None:
+        query += " JOIN lots l ON l.id = m.lot_id WHERE l.brand_id = ?"
+        params.append(brand_id)
+    query += " ORDER BY m.moved_at ASC, m.id ASC"
+
+    movements = conn.execute(query, params).fetchall()
     stage_names = {r["id"]: r["name"] for r in conn.execute("SELECT id, name FROM stages")}
 
     current: dict[int, int] = defaultdict(int)
@@ -101,18 +117,24 @@ def wip_over_time(conn: sqlite3.Connection) -> list[dict]:
     return snapshots
 
 
-def fi_date_risk(conn: sqlite3.Connection) -> list[dict]:
+def fi_date_risk(conn: sqlite3.Connection, brand_id: int | None = None) -> list[dict]:
     """Estimate: predicted completion = today + sum(avg days per remaining stage).
     Worthless until ~2 months of movement history exists - always label as an estimate."""
-    stage_avgs = avg_days_per_stage(conn)
+    stage_avgs = avg_days_per_stage(conn, brand_id=brand_id)
     stages = conn.execute("SELECT id, name, rank FROM stages ORDER BY rank").fetchall()
     rank_by_id = {s["id"]: s["rank"] for s in stages}
     name_by_rank = {s["rank"]: s["name"] for s in stages}
 
-    lots = conn.execute(
+    query = (
         "SELECT l.id, l.ct_number, l.fi_date, b.name AS brand_name "
-        "FROM lots l JOIN brands b ON b.id = l.brand_id WHERE l.closed_at IS NULL AND l.fi_date IS NOT NULL"
-    ).fetchall()
+        "FROM lots l JOIN brands b ON b.id = l.brand_id "
+        "WHERE l.closed_at IS NULL AND l.fi_date IS NOT NULL"
+    )
+    params: list = []
+    if brand_id is not None:
+        query += " AND b.id = ?"
+        params.append(brand_id)
+    lots = conn.execute(query, params).fetchall()
 
     today = date.today()
     result = []
@@ -143,3 +165,39 @@ def fi_date_risk(conn: sqlite3.Connection) -> list[dict]:
         )
     result.sort(key=lambda r: r["fi_date"])
     return result
+
+
+def summary_kpis(conn: sqlite3.Connection, brand_id: int | None = None) -> dict:
+    """Headline numbers for the KPI row: where things stand right now."""
+    brand_filter = " AND brand_id = ?" if brand_id is not None else ""
+    params = [brand_id] if brand_id is not None else []
+
+    open_lots_count, pieces_in_pipeline = conn.execute(
+        f"SELECT COUNT(*), COALESCE(SUM(total_qty), 0) FROM lots "
+        f"WHERE closed_at IS NULL{brand_filter}",
+        params,
+    ).fetchone()
+
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=now.isoweekday() - 1)).strftime("%Y-%m-%d")
+    shipped_this_week = conn.execute(
+        f"SELECT COALESCE(SUM(total_qty), 0) FROM lots "
+        f"WHERE closed_at IS NOT NULL AND substr(closed_at, 1, 10) >= ?{brand_filter}",
+        [week_start, *params],
+    ).fetchone()[0]
+
+    closed_query = f"SELECT created_at, closed_at FROM lots WHERE closed_at IS NOT NULL{brand_filter}"
+    closed_lots = conn.execute(closed_query, params).fetchall()
+    cycle_days = [
+        (datetime.fromisoformat(r["closed_at"]) - datetime.fromisoformat(r["created_at"])).days
+        for r in closed_lots
+    ]
+    avg_cycle_time_days = round(sum(cycle_days) / len(cycle_days), 1) if len(cycle_days) >= 3 else None
+
+    return {
+        "open_lots_count": open_lots_count,
+        "pieces_in_pipeline": pieces_in_pipeline,
+        "shipped_this_week": shipped_this_week,
+        "avg_cycle_time_days": avg_cycle_time_days,
+        "closed_lot_count": len(closed_lots),
+    }

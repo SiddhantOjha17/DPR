@@ -58,3 +58,45 @@ def test_spykar_wash_column_populated(conn):
         "WHERE b.name = 'SPYKAR' AND wash IS NOT NULL LIMIT 1"
     ).fetchone()
     assert row is not None
+
+
+def test_reimporting_same_file_skips_rows_with_a_real_ct_number(conn):
+    first = import_workbook(str(FIXTURE), conn)
+    assert first.total_lots == 135
+
+    second = import_workbook(str(FIXTURE), conn)
+    # Every ARVIND row has a blank CT number in the real sheet (confirmed by direct
+    # inspection) - those can never be deduplicated, since there's nothing to match
+    # on, so they legitimately reappear as "new" on a second import. Every row that
+    # DOES have a real CT number must be skipped instead of duplicated.
+    skipped_cts = {ct for _, ct in second.skipped_duplicates}
+    assert "A539" in skipped_cts  # a real CT from the RAYMOND sheet
+    assert "B017" in skipped_cts  # a real CT from the MONTE CARLO sheet
+    assert second.per_brand["RAYMOND"] == 0  # RAYMOND CTs are all real -> all skipped
+    assert second.per_brand["ARVIND"] == 10700  # ARVIND CTs are all blank -> all re-added
+
+    (total_lots,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
+    assert total_lots == 135 + second.total_lots
+    check_invariants(conn)
+
+
+def test_blank_ct_rows_are_never_treated_as_duplicates_of_each_other(conn):
+    result = import_workbook(str(FIXTURE), conn)
+    # ARVIND has several legitimate rows with a blank CT number - none of them
+    # should be skipped as "duplicates" of one another.
+    blank_ct_skips = [s for s in result.skipped_duplicates if s[1] == ""]
+    assert blank_ct_skips == []
+
+
+def test_replace_mode_wipes_existing_lots_first(conn):
+    import_workbook(str(FIXTURE), conn)
+    (before,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
+    assert before == 135
+
+    result = import_workbook(str(FIXTURE), conn, wipe_existing=True)
+    assert result.replaced is True
+    assert result.total_lots == 135  # fresh import, nothing left over to collide with
+
+    (after,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
+    assert after == 135
+    check_invariants(conn)

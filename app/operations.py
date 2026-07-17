@@ -255,6 +255,19 @@ def mark_shipped(conn: sqlite3.Connection, *, lot_id: int) -> None:
         )
 
 
+def reopen_lot(conn: sqlite3.Connection, *, lot_id: int) -> None:
+    """Undo a shipment: clears closed_at so the lot reappears on the main screen
+    at whatever stage its positions still say (normally FI Done, untouched since
+    mark_shipped never moves pieces, only stamps the lot as closed)."""
+    lot = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    if lot is None:
+        raise MoveError(f"No such lot: {lot_id}")
+    if lot["closed_at"] is None:
+        raise MoveError("Lot is not shipped.")
+    with db.transaction(conn):
+        conn.execute("UPDATE lots SET closed_at = NULL WHERE id = ?", (lot_id,))
+
+
 def days_in_stage_current(conn: sqlite3.Connection, lot_id: int) -> list[dict]:
     now = datetime.now(timezone.utc)
     rows = conn.execute(

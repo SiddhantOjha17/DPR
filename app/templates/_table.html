@@ -1,4 +1,4 @@
-<div id="main-table-wrap" hx-trigger="dpr:refresh from:body" hx-get="/" hx-target="this" hx-swap="outerHTML" hx-include="#brand-select">
+<div id="main-table-wrap"{% if oob %} hx-swap-oob="true"{% endif %}>
   <div class="brand-picker">
     <label>Brand:
       <select id="brand-select" name="brand" hx-get="/" hx-target="#main-table-wrap" hx-swap="outerHTML" hx-push-url="true">
@@ -8,7 +8,11 @@
         {% endfor %}
       </select>
     </label>
+    <a href="/lots/add-form{% if selected_brand %}?brand={{ selected_brand }}{% endif %}"
+       hx-get="/lots/add-form{% if selected_brand %}?brand={{ selected_brand }}{% endif %}"
+       hx-target="#side-panel" hx-swap="innerHTML" class="add-lot-link">+ Add lot</a>
   </div>
+  <div class="table-scroll">
   <table class="dpr-table">
     <thead>
       <tr>
@@ -20,7 +24,7 @@
       {% for group in groups %}
       <tr class="stage-group-header"><td colspan="12">{{ group.stage_name }}</td></tr>
       {% for row in group.rows %}
-      <tr class="lot-row" hx-get="/lots/{{ row.lot_id }}/panel" hx-target="#side-panel" hx-swap="innerHTML">
+      <tr class="lot-row" hx-get="/lots/{{ row.lot_id }}/panel{% if selected_brand %}?brand={{ selected_brand }}{% endif %}" hx-target="#side-panel" hx-swap="innerHTML">
         <td>{{ row.brand_name }}</td>
         <td>{{ row.sub_brand_name or "" }}</td>
         <td>{{ row.ct_number }}</td>
@@ -29,8 +33,8 @@
         <td>{{ row.wash or "" }}</td>
         <td>{{ row.stage_qty }}{% if row.is_split %} <span class="split-marker">({{ row.stage_qty }} of {{ row.total_qty }})</span>{% endif %}</td>
         <td>{{ row.remark or "" }}</td>
-        <td>{{ row.fi_date or "" }}</td>
-        <td>{{ row.fabric_date or "" }}</td>
+        <td>{{ (row.fi_date or "")[:10] }}</td>
+        <td>{{ (row.fabric_date or "")[:10] }}</td>
         <td>{{ row.stage_name }}</td>
         <td>{{ row.days }}</td>
       </tr>
@@ -43,4 +47,5 @@
       <tr class="grand-total"><td colspan="6">Grand total</td><td>{{ grand_total }}</td><td colspan="5"></td></tr>
     </tbody>
   </table>
+  </div>
 </div>

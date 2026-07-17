@@ -3,7 +3,7 @@
 {% block content %}
 <div style="width:100%; max-width:900px; display:flex; flex-direction:column; gap:28px;">
   <h2>Settings</h2>
-  {% if message %}<div class="success-banner">{{ message }}</div>{% endif %}
+  {% include "_toast.html" %}
 
   <section>
     <h3>Data &amp; backups</h3>
@@ -37,7 +37,11 @@
               <input type="hidden" name="direction" value="down"><button type="submit">↓</button>
             </form>
             <form method="post" action="/settings/stages/{{ s.id }}/toggle-active" class="inline">
-              <button type="submit">{{ "Deactivate" if s.active else "Activate" }}</button>
+              {% if s.active %}
+              <button type="submit" class="icon-btn danger" title="Remove">🗑</button>
+              {% else %}
+              <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
+              {% endif %}
             </form>
           </td>
         </tr>
@@ -66,7 +70,11 @@
           <td>{{ "Yes" if b.active else "No" }}</td>
           <td>
             <form method="post" action="/settings/brands/{{ b.id }}/toggle-active" class="inline">
-              <button type="submit">{{ "Deactivate" if b.active else "Activate" }}</button>
+              {% if b.active %}
+              <button type="submit" class="icon-btn danger" title="Remove">🗑</button>
+              {% else %}
+              <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
+              {% endif %}
             </form>
           </td>
         </tr>
@@ -124,7 +132,11 @@
           <td>{{ "Yes" if u.active else "No" }}</td>
           <td>
             <form method="post" action="/settings/users/{{ u.id }}/toggle-active" class="inline">
-              <button type="submit">{{ "Deactivate" if u.active else "Activate" }}</button>
+              {% if u.active %}
+              <button type="submit" class="icon-btn danger" title="Remove">🗑</button>
+              {% else %}
+              <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
+              {% endif %}
             </form>
           </td>
         </tr>
