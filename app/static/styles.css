@@ -1,0 +1,72 @@
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, Segoe UI, Arial, sans-serif;
+  margin: 0;
+  color: #1a1a1a;
+  background: #f7f7f5;
+}
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1f2d3d;
+  color: white;
+  padding: 10px 20px;
+}
+.app-header-left { display: flex; align-items: center; gap: 24px; }
+.app-name { font-weight: 700; font-size: 1.2em; }
+.app-nav a { color: #cfd8e3; text-decoration: none; margin-right: 16px; }
+.app-nav a:hover { color: white; }
+.app-header-right { display: flex; align-items: center; gap: 14px; font-size: 0.9em; }
+.lan-url code { background: #33475a; padding: 2px 6px; border-radius: 3px; }
+.quit-btn { background: #b3413a; color: white; border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+
+main { padding: 16px 20px; display: flex; gap: 16px; }
+
+.brand-picker { margin-bottom: 12px; }
+.brand-picker select { font-size: 1em; padding: 4px 8px; }
+
+table.dpr-table { border-collapse: collapse; width: 100%; background: white; }
+table.dpr-table th, table.dpr-table td {
+  border-bottom: 1px solid #e2e2e2;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 0.9em;
+}
+table.dpr-table th { background: #eceef1; position: sticky; top: 0; }
+tr.stage-group-header td {
+  background: #dde4ec;
+  font-weight: 700;
+  padding-top: 10px;
+}
+tr.stage-subtotal td {
+  background: #f0f0ee;
+  font-weight: 600;
+  border-top: 1px solid #ccc;
+}
+tr.grand-total td {
+  background: #1f2d3d;
+  color: white;
+  font-weight: 700;
+}
+tr.lot-row { cursor: pointer; }
+tr.lot-row:hover { background: #f0f6ff; }
+.split-marker { color: #a15c00; font-size: 0.85em; }
+
+#main-table-wrap { flex: 3; min-width: 0; }
+#side-panel { flex: 2; max-width: 420px; background: white; border: 1px solid #ddd; border-radius: 4px; padding: 14px; min-height: 200px; }
+#side-panel h3 { margin-top: 0; }
+#side-panel .section { margin-bottom: 18px; }
+#side-panel label { display: block; margin-top: 8px; font-size: 0.85em; color: #555; }
+#side-panel input, #side-panel select, #side-panel textarea {
+  width: 100%; padding: 4px 6px; font-size: 0.95em; margin-top: 2px;
+}
+#side-panel button { margin-top: 10px; padding: 5px 14px; cursor: pointer; }
+.movement-reversed { text-decoration: line-through; color: #999; }
+.error-banner { background: #ffe3e0; color: #9c1c0e; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; }
+.success-banner { background: #e2f6e5; color: #1c6b2b; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px; }
+
+form.inline { display: inline; }
+
+table.settings-table { border-collapse: collapse; margin-bottom: 24px; }
+table.settings-table th, table.settings-table td { padding: 4px 10px; border-bottom: 1px solid #eee; }

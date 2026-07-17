@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DPR{% endblock %}</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-left">
+      <span class="app-name">DPR</span>
+      <nav class="app-nav">
+        <a href="/">Main</a>
+        <a href="/archive">Archive</a>
+        <a href="/import">Import</a>
+        <a href="/analytics">Analytics</a>
+        <a href="/settings">Settings</a>
+      </nav>
+    </div>
+    <div class="app-header-right">
+      <span class="lan-url">LAN: <code>{{ lan_url }}</code></span>
+      <form method="post" action="/session/user" class="who-are-you">
+        <select name="user_id" onchange="this.form.submit()">
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if u.id == current_user_id %}selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      <form method="post" action="/quit" onsubmit="return confirm('Quit DPR?');">
+        <button type="submit" class="quit-btn">Quit</button>
+      </form>
+    </div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

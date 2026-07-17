@@ -1,0 +1,99 @@
+<div id="side-panel">
+  <h3>{{ lot.brand_name }} — CT {{ lot.ct_number }}</h3>
+  {% if message %}<div class="{{ message_class }}">{{ message }}</div>{% endif %}
+
+  <div class="section">
+    <strong>Total qty:</strong> {{ lot.total_qty }}<br>
+    <strong>Code:</strong> {{ lot.material_code or "" }}
+    &nbsp; <strong>Fabric:</strong> {{ lot.fabric or "" }}
+    &nbsp; <strong>Wash:</strong> {{ lot.wash or "" }}
+  </div>
+
+  <div class="section">
+    <h4>Move</h4>
+    {% for pos in positions %}
+    <form hx-post="/lots/{{ lot.id }}/move" hx-target="#side-panel" hx-swap="innerHTML">
+      <input type="hidden" name="from_stage_id" value="{{ pos.stage_id }}">
+      <div>From <strong>{{ pos.stage_name }}</strong> ({{ pos.qty }} pieces, {{ pos.days }} days)</div>
+      <label>To stage
+        <select name="to_stage_id" required>
+          {% for s in stages %}
+          {% if s.id != pos.stage_id %}
+          <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+      <label>Qty
+        <input type="number" name="qty" value="{{ pos.qty }}" min="1" max="{{ pos.qty }}" required>
+      </label>
+      <label>Note
+        <input type="text" name="note">
+      </label>
+      <button type="submit">Move</button>
+    </form>
+    {% endfor %}
+  </div>
+
+  {% if can_ship %}
+  <div class="section">
+    <form hx-post="/lots/{{ lot.id }}/ship" hx-target="#side-panel" hx-swap="innerHTML">
+      <button type="submit">Mark as shipped</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="section">
+    <h4>Edit</h4>
+    <form hx-post="/lots/{{ lot.id }}/edit" hx-target="#side-panel" hx-swap="innerHTML">
+      <label>Sub-brand
+        <select name="sub_brand_id">
+          <option value="">—</option>
+          {% for sb in sub_brands %}
+          <option value="{{ sb.id }}" {% if sb.id == lot.sub_brand_id %}selected{% endif %}>{{ sb.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Remark <input type="text" name="remark" value="{{ lot.remark or '' }}"></label>
+      <label>Material code <input type="text" name="material_code" value="{{ lot.material_code or '' }}"></label>
+      <label>Fabric <input type="text" name="fabric" value="{{ lot.fabric or '' }}"></label>
+      <label>Wash <input type="text" name="wash" value="{{ lot.wash or '' }}"></label>
+      <label>FI date <input type="date" name="fi_date" value="{{ lot.fi_date or '' }}"></label>
+      <label>Fab date <input type="date" name="fabric_date" value="{{ lot.fabric_date or '' }}"></label>
+      <button type="submit">Save</button>
+    </form>
+  </div>
+
+  <div class="section">
+    <h4>Timeline</h4>
+    <table class="settings-table">
+      <thead><tr><th>Stage</th><th>First entered</th><th>Last left</th><th>Total days</th></tr></thead>
+      <tbody>
+      {% for t in timeline %}
+        <tr>
+          <td>{{ t.stage_name }}</td>
+          <td>{{ t.first_entered[:10] }}</td>
+          <td>{{ t.last_left[:10] if t.last_left else "current" }}</td>
+          <td>{{ t.total_days }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h4>History</h4>
+    {% for m in history %}
+    <div class="{{ 'movement-reversed' if m.is_reversed else '' }}">
+      {{ m.moved_at[:16] }} — {{ m.from_stage_name or "opened" }} &rarr; {{ m.to_stage_name }}
+      ({{ m.qty }}) {{ m.moved_by_name or "" }} {{ m.note or "" }}
+      {% if not m.is_reversed %}
+      <form class="inline" hx-post="/movements/{{ m.id }}/undo" hx-target="#side-panel" hx-swap="innerHTML">
+        <input type="hidden" name="lot_id" value="{{ lot.id }}">
+        <button type="submit">Undo</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>

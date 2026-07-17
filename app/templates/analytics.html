@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}DPR — Analytics{% endblock %}
+{% block content %}
+<div style="width:100%; display:flex; flex-direction:column; gap:28px;">
+  <h2>Analytics</h2>
+
+  <section>
+    <h3>Longest time in current stage</h3>
+    <p style="color:#666">Sorted longest first. No thresholds, no alerts &mdash; just the list.</p>
+    <table class="dpr-table">
+      <thead><tr><th>Brand</th><th>CT</th><th>Stage</th><th>Qty</th><th>Days</th></tr></thead>
+      <tbody>
+        {% for r in longest_in_stage[:30] %}
+        <tr><td>{{ r.brand_name }}</td><td>{{ r.ct_number }}</td><td>{{ r.stage_name }}</td><td>{{ r.qty }}</td><td>{{ r.days }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>FI date risk <span style="font-weight:normal; color:#a15c00;">(estimate — noisy until ~2 months of history exist)</span></h3>
+    <table class="dpr-table">
+      <thead><tr><th>Brand</th><th>CT</th><th>FI Date</th><th>Predicted completion</th><th>At risk?</th></tr></thead>
+      <tbody>
+        {% for r in fi_risk %}
+        <tr>
+          <td>{{ r.brand_name }}</td><td>{{ r.ct_number }}</td><td>{{ r.fi_date }}</td>
+          <td>{{ r.predicted_completion }}</td>
+          <td>{{ "Yes" if r.at_risk else "No" }}</td>
+        </tr>
+        {% endfor %}
+        {% if not fi_risk %}
+        <tr><td colspan="5">No lots with an FI date yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>Average days per stage</h3>
+    <table class="settings-table">
+      <thead><tr><th>Stage</th><th>Avg days</th></tr></thead>
+      <tbody>
+        {% for stage, avg in avg_days.items() %}
+        <tr><td>{{ stage }}</td><td>{{ avg }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>Average days per stage, per brand</h3>
+    {% for brand, stages in avg_days_per_brand.items() %}
+    {% if stages %}
+    <h4>{{ brand }}</h4>
+    <table class="settings-table">
+      <thead><tr><th>Stage</th><th>Avg days</th></tr></thead>
+      <tbody>
+        {% for stage, avg in stages.items() %}
+        <tr><td>{{ stage }}</td><td>{{ avg }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% endfor %}
+  </section>
+
+  <section>
+    <h3>Throughput — pieces reaching FI Done per week</h3>
+    <table class="settings-table">
+      <thead><tr><th>Week</th><th>Pieces</th></tr></thead>
+      <tbody>
+        {% for r in throughput %}
+        <tr><td>{{ r.week }}</td><td>{{ r.qty }}</td></tr>
+        {% endfor %}
+        {% if not throughput %}
+        <tr><td colspan="2">No lots have reached FI Done yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3>WIP by stage over time</h3>
+    <table class="dpr-table">
+      <thead><tr><th>Date</th><th>By stage</th></tr></thead>
+      <tbody>
+        {% for snap in wip_over_time[-30:] %}
+        <tr>
+          <td>{{ snap.date }}</td>
+          <td>{% for stage, qty in snap.by_stage.items() %}{{ stage }}: {{ qty }}&nbsp;&nbsp; {% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

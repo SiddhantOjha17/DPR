@@ -1,0 +1,46 @@
+<div id="main-table-wrap" hx-trigger="dpr:refresh from:body" hx-get="/" hx-target="this" hx-swap="outerHTML" hx-include="#brand-select">
+  <div class="brand-picker">
+    <label>Brand:
+      <select id="brand-select" name="brand" hx-get="/" hx-target="#main-table-wrap" hx-swap="outerHTML" hx-push-url="true">
+        <option value="">All brands</option>
+        {% for b in brands %}
+        <option value="{{ b.id }}" {% if selected_brand == b.id %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <table class="dpr-table">
+    <thead>
+      <tr>
+        <th>Brand</th><th>Sub-brand</th><th>CT</th><th>Code</th><th>Fabric</th><th>Wash</th>
+        <th>Qty</th><th>Remark</th><th>FI Date</th><th>Fab Date</th><th>Current Stage</th><th>Days</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in groups %}
+      <tr class="stage-group-header"><td colspan="12">{{ group.stage_name }}</td></tr>
+      {% for row in group.rows %}
+      <tr class="lot-row" hx-get="/lots/{{ row.lot_id }}/panel" hx-target="#side-panel" hx-swap="innerHTML">
+        <td>{{ row.brand_name }}</td>
+        <td>{{ row.sub_brand_name or "" }}</td>
+        <td>{{ row.ct_number }}</td>
+        <td>{{ row.material_code or "" }}</td>
+        <td>{{ row.fabric or "" }}</td>
+        <td>{{ row.wash or "" }}</td>
+        <td>{{ row.stage_qty }}{% if row.is_split %} <span class="split-marker">({{ row.stage_qty }} of {{ row.total_qty }})</span>{% endif %}</td>
+        <td>{{ row.remark or "" }}</td>
+        <td>{{ row.fi_date or "" }}</td>
+        <td>{{ row.fabric_date or "" }}</td>
+        <td>{{ row.stage_name }}</td>
+        <td>{{ row.days }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="stage-subtotal"><td colspan="6">Subtotal</td><td>{{ group.subtotal }}</td><td colspan="5"></td></tr>
+      {% endfor %}
+      {% if not groups %}
+      <tr><td colspan="12">No open lots{% if selected_brand %} for this brand{% endif %}. Import your Excel file from Settings to get started.</td></tr>
+      {% endif %}
+      <tr class="grand-total"><td colspan="6">Grand total</td><td>{{ grand_total }}</td><td colspan="5"></td></tr>
+    </tbody>
+  </table>
+</div>

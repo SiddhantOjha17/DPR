@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}DPR — Import{% endblock %}
+{% block content %}
+<div style="max-width:600px">
+  <h2>Import Excel workbook</h2>
+  <p>Upload the DPR workbook (one sheet per brand: SPYKAR, MONTE CARLO, PEPE, KKCL, RAYMOND, BENETTON, ARVIND).
+     This only makes sense on an empty database — it is meant for first-run setup.</p>
+
+  {% if error %}
+  <div class="error-banner">{{ error }}</div>
+  {% endif %}
+  {% if result %}
+  <div class="success-banner">
+    Imported {{ result.total_lots }} lots, {{ result.total_pieces }} pieces total.
+    <table class="settings-table">
+      <thead><tr><th>Brand</th><th>Pieces</th></tr></thead>
+      <tbody>
+        {% for brand, qty in result.per_brand.items() %}
+        <tr><td>{{ brand }}</td><td>{{ qty }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".xlsx" required>
+    <button type="submit">Import</button>
+  </form>
+</div>
+{% endblock %}

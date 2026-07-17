@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}DPR — Archive{% endblock %}
+{% block content %}
+<div style="width:100%">
+  <h2>Archive</h2>
+  <form method="get" action="/archive" style="margin-bottom:14px; display:flex; gap:10px; align-items:end;">
+    <label>CT<br><input type="text" name="ct" value="{{ filters.ct }}"></label>
+    <label>Brand<br>
+      <select name="brand">
+        <option value="">Any</option>
+        {% for b in brands %}
+        <option value="{{ b.id }}" {% if filters.brand == b.id %}selected{% endif %}>{{ b.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Code<br><input type="text" name="code" value="{{ filters.code }}"></label>
+    <label>Closed from<br><input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+    <label>Closed to<br><input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+    <button type="submit">Search</button>
+  </form>
+
+  <table class="dpr-table">
+    <thead>
+      <tr><th>Brand</th><th>CT</th><th>Code</th><th>Fabric</th><th>Qty</th><th>Shipped</th></tr>
+    </thead>
+    <tbody>
+      {% for lot in lots %}
+      <tr>
+        <td>{{ lot.brand_name }}</td>
+        <td>{{ lot.ct_number }}</td>
+        <td>{{ lot.material_code or "" }}</td>
+        <td>{{ lot.fabric or "" }}</td>
+        <td>{{ lot.total_qty }}</td>
+        <td>{{ lot.closed_at[:10] }}</td>
+      </tr>
+      {% endfor %}
+      {% if not lots %}
+      <tr><td colspan="6">No shipped lots match.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
