@@ -3,15 +3,18 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app import auth
 from app.backup import backup_to_folder
 from app.config import Config, data_dir, load_config, save_config
-from app.web import base_context, get_conn, new_toast_id, templates
+from app.web import base_context, get_conn, new_toast_id, require_permission, templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_permission("admin"))])
 
 
-def _redirect(message: str = "", undo_url: str = "", undo_field: str = "", undo_value: str = ""):
+def _redirect(message: str = "", undo_url: str = "", undo_field: str = "", undo_value: str = "", error: str = ""):
     params = {"message": message}
+    if error:
+        params = {"message": "", "error": error}
     if undo_url:
         params["undo_url"] = undo_url
         params["undo_field"] = undo_field
@@ -19,10 +22,29 @@ def _redirect(message: str = "", undo_url: str = "", undo_field: str = "", undo_
     return RedirectResponse(url=f"/settings?{urlencode(params)}", status_code=303)
 
 
+def _admin_capable_user_count(conn, excluding_user_id: int | None = None) -> int:
+    query = (
+        "SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id "
+        "WHERE u.active = 1 AND r.active = 1 AND r.can_admin = 1"
+    )
+    params: list = []
+    if excluding_user_id is not None:
+        query += " AND u.id != ?"
+        params.append(excluding_user_id)
+    return conn.execute(query, params).fetchone()[0]
+
+
+def _role_active_user_count(conn, role_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM users WHERE role_id = ? AND active = 1", (role_id,)
+    ).fetchone()[0]
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_screen(
     request: Request,
     message: str = "",
+    error: str = "",
     undo_url: str = "",
     undo_field: str = "",
     undo_value: str = "",
@@ -34,7 +56,10 @@ def settings_screen(
         "SELECT sb.*, b.name AS brand_name FROM sub_brands sb JOIN brands b ON b.id = sb.brand_id "
         "ORDER BY b.name, sb.name"
     ).fetchall()
-    users = conn.execute("SELECT * FROM users ORDER BY name").fetchall()
+    roles = conn.execute("SELECT * FROM roles ORDER BY name").fetchall()
+    users = conn.execute(
+        "SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id ORDER BY u.name"
+    ).fetchall()
     cfg = load_config()
     return templates.TemplateResponse(
         request,
@@ -44,9 +69,11 @@ def settings_screen(
             "stages": stages,
             "brands": brands,
             "sub_brands": sub_brands,
+            "roles": roles,
             "users": users,
             "data_dir": str(data_dir()),
             "cfg": cfg,
+            "error_message": error,
             "toast_message": message,
             "toast_undo_url": undo_url,
             "toast_undo_fields": {undo_field: undo_value} if undo_field else {},
@@ -150,6 +177,51 @@ def rename_sub_brand(sub_brand_id: int, name: str = Form(...), conn=Depends(get_
     )
 
 
+# --- Roles ---
+
+@router.post("/settings/roles/add")
+def add_role(name: str = Form(...), conn=Depends(get_conn)):
+    cur = conn.execute("INSERT INTO roles (name) VALUES (?)", (name,))
+    conn.commit()
+    return _redirect(f"Added role {name}.", undo_url=f"/settings/roles/{cur.lastrowid}/toggle-active")
+
+
+@router.post("/settings/roles/{role_id}/update")
+def update_role(
+    role_id: int,
+    name: str = Form(...),
+    can_move: bool = Form(False),
+    can_edit: bool = Form(False),
+    can_ship: bool = Form(False),
+    can_admin: bool = Form(False),
+    conn=Depends(get_conn),
+):
+    role = conn.execute("SELECT * FROM roles WHERE id = ?", (role_id,)).fetchone()
+    if role["can_admin"] and not can_admin:
+        dependents = _role_active_user_count(conn, role_id)
+        if dependents and _admin_capable_user_count(conn) - dependents <= 0:
+            return _redirect(error="This would leave no one able to manage Settings — assign another admin first.")
+    conn.execute(
+        "UPDATE roles SET name = ?, can_move = ?, can_edit = ?, can_ship = ?, can_admin = ? WHERE id = ?",
+        (name, can_move, can_edit, can_ship, can_admin, role_id),
+    )
+    conn.commit()
+    return _redirect("Role updated.")
+
+
+@router.post("/settings/roles/{role_id}/toggle-active")
+def toggle_role(role_id: int, conn=Depends(get_conn)):
+    role = conn.execute("SELECT * FROM roles WHERE id = ?", (role_id,)).fetchone()
+    if role["active"] and role["can_admin"]:
+        dependents = _role_active_user_count(conn, role_id)
+        if dependents and _admin_capable_user_count(conn) - dependents <= 0:
+            return _redirect(error="This would leave no one able to manage Settings — assign another admin first.")
+    conn.execute("UPDATE roles SET active = 1 - active WHERE id = ?", (role_id,))
+    conn.commit()
+    message = f"{role['name']} removed." if role["active"] else f"{role['name']} restored."
+    return _redirect(message, undo_url=f"/settings/roles/{role_id}/toggle-active")
+
+
 # --- Users ---
 
 @router.post("/settings/users/add")
@@ -171,11 +243,44 @@ def rename_user(user_id: int, name: str = Form(...), conn=Depends(get_conn)):
 
 @router.post("/settings/users/{user_id}/toggle-active")
 def toggle_user(user_id: int, conn=Depends(get_conn)):
-    user = conn.execute("SELECT active, name FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = conn.execute(
+        "SELECT u.active, u.name, r.can_admin FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?",
+        (user_id,),
+    ).fetchone()
+    if user["active"] and user["can_admin"]:
+        if _admin_capable_user_count(conn, excluding_user_id=user_id) == 0:
+            return _redirect(error="This would leave no one able to manage Settings — assign another admin first.")
     conn.execute("UPDATE users SET active = 1 - active WHERE id = ?", (user_id,))
     conn.commit()
     message = f"{user['name']} removed." if user["active"] else f"{user['name']} restored."
     return _redirect(message, undo_url=f"/settings/users/{user_id}/toggle-active")
+
+
+@router.post("/settings/users/{user_id}/role")
+def set_user_role(user_id: int, role_id: str = Form(""), conn=Depends(get_conn)):
+    user = conn.execute(
+        "SELECT u.active, r.can_admin FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?",
+        (user_id,),
+    ).fetchone()
+    new_role = conn.execute("SELECT can_admin FROM roles WHERE id = ?", (role_id,)).fetchone() if role_id else None
+    losing_admin = user["active"] and user["can_admin"] and not (new_role and new_role["can_admin"])
+    if losing_admin and _admin_capable_user_count(conn, excluding_user_id=user_id) == 0:
+        return _redirect(error="This would leave no one able to manage Settings — assign another admin first.")
+    conn.execute("UPDATE users SET role_id = ? WHERE id = ?", (role_id or None, user_id))
+    conn.commit()
+    return _redirect("Role assigned.")
+
+
+@router.post("/settings/users/{user_id}/password")
+def set_user_password(user_id: int, password: str = Form(...), password_confirm: str = Form(...), conn=Depends(get_conn)):
+    if password != password_confirm or len(password) < 4:
+        return _redirect(error="Passwords must match and be at least 4 characters.")
+    password_hash, salt = auth.hash_password(password)
+    conn.execute(
+        "UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?", (password_hash, salt, user_id)
+    )
+    conn.commit()
+    return _redirect("Password updated.")
 
 
 # --- Backup / email ---

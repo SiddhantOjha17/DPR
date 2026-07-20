@@ -3,6 +3,7 @@
 {% block content %}
 <div style="width:100%; max-width:900px; display:flex; flex-direction:column; gap:28px;">
   <h2>Settings</h2>
+  {% if error_message %}<div class="error-banner">{{ error_message }}</div>{% endif %}
   {% include "_toast.html" %}
 
   <section>
@@ -117,9 +118,46 @@
   </section>
 
   <section>
+    <h3>Roles</h3>
+    <p class="section-note">Each role is a bundle of what its users can do. Assign roles to people below.</p>
+    <table class="settings-table">
+      <thead><tr><th>Name</th><th>Move/undo</th><th>Edit/add lot</th><th>Ship/reopen</th><th>Settings &amp; admin</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+        {% for r in roles %}
+        <form id="roleform-{{ r.id }}" method="post" action="/settings/roles/{{ r.id }}/update"></form>
+        <tr>
+          <td><input form="roleform-{{ r.id }}" type="text" name="name" value="{{ r.name }}" style="width:140px"></td>
+          <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_move" value="true" {% if r.can_move %}checked{% endif %}></td>
+          <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_edit" value="true" {% if r.can_edit %}checked{% endif %}></td>
+          <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_ship" value="true" {% if r.can_ship %}checked{% endif %}></td>
+          <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_admin" value="true" {% if r.can_admin %}checked{% endif %}></td>
+          <td>{{ "Yes" if r.active else "No" }}</td>
+          <td><button form="roleform-{{ r.id }}" type="submit">Save</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:-8px; margin-bottom:12px;">
+      {% for r in roles %}
+      <form method="post" action="/settings/roles/{{ r.id }}/toggle-active" class="inline">
+        {% if r.active %}
+        <button type="submit" class="icon-btn danger" title="Remove {{ r.name }}">🗑 {{ r.name }}</button>
+        {% else %}
+        <button type="submit" class="icon-btn" title="Restore {{ r.name }}">↺ Restore {{ r.name }}</button>
+        {% endif %}
+      </form>
+      {% endfor %}
+    </div>
+    <form method="post" action="/settings/roles/add">
+      <input type="text" name="name" placeholder="New role name" required>
+      <button type="submit">Add role</button>
+    </form>
+  </section>
+
+  <section>
     <h3>Users</h3>
     <table class="settings-table">
-      <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Role</th><th>Active</th><th></th><th>Password</th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
@@ -127,6 +165,18 @@
             <form method="post" action="/settings/users/{{ u.id }}/rename" class="inline">
               <input type="text" name="name" value="{{ u.name }}" style="width:150px">
               <button type="submit">Save</button>
+            </form>
+          </td>
+          <td>
+            <form method="post" action="/settings/users/{{ u.id }}/role" class="inline">
+              <select name="role_id" onchange="this.form.submit()">
+                <option value="">— no role —</option>
+                {% for r in roles %}
+                {% if r.active %}
+                <option value="{{ r.id }}" {% if u.role_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                {% endif %}
+                {% endfor %}
+              </select>
             </form>
           </td>
           <td>{{ "Yes" if u.active else "No" }}</td>
@@ -138,6 +188,16 @@
               <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
               {% endif %}
             </form>
+          </td>
+          <td>
+            <details>
+              <summary>Set password</summary>
+              <form method="post" action="/settings/users/{{ u.id }}/password">
+                <input type="password" name="password" placeholder="New password" required minlength="4" style="width:120px">
+                <input type="password" name="password_confirm" placeholder="Confirm" required minlength="4" style="width:120px">
+                <button type="submit">Save</button>
+              </form>
+            </details>
           </td>
         </tr>
         {% endfor %}

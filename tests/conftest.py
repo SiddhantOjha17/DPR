@@ -35,6 +35,9 @@ def user_id(conn):
     return row["id"]
 
 
+OWNER_TEST_PASSWORD = "test-owner-pass"
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DPR_DATA_DIR", str(tmp_path))
@@ -42,4 +45,10 @@ def client(tmp_path, monkeypatch):
 
     app = create_app()
     with TestClient(app) as test_client:
+        # Complete first-run owner-password setup - the response also sets the
+        # signed session cookie, logging this client in as the Owner (full
+        # permissions), so existing route tests keep working unchanged.
+        test_client.post(
+            "/setup", data={"password": OWNER_TEST_PASSWORD, "password_confirm": OWNER_TEST_PASSWORD}
+        )
         yield test_client

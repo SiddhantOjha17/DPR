@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import operations
 from app.operations import MoveError, UndoError
 from app.routes.main_screen import fetch_grouped_positions
-from app.web import current_user_id, get_conn, new_toast_id, parse_optional_int, templates
+from app.web import current_user_id, get_conn, new_toast_id, parse_optional_int, require_permission, templates
 
 router = APIRouter()
 
@@ -117,7 +117,7 @@ def get_panel(request: Request, lot_id: int, brand: str = "", conn=Depends(get_c
 
 
 @router.get("/lots/add-form", response_class=HTMLResponse)
-def add_lot_form(request: Request, brand: str = "", conn=Depends(get_conn)):
+def add_lot_form(request: Request, brand: str = "", conn=Depends(get_conn), _perm=Depends(require_permission("edit"))):
     brands = conn.execute("SELECT id, name FROM brands WHERE active = 1 ORDER BY name").fetchall()
     stages = conn.execute("SELECT id, name FROM stages WHERE active = 1 ORDER BY rank").fetchall()
     sub_brands = conn.execute(
@@ -147,6 +147,7 @@ def add_lot(
     fabric_date: str = Form(""),
     remark: str = Form(""),
     brand_filter: str = Form(""),
+    _perm=Depends(require_permission("edit")),
 ):
     is_htmx = bool(request.headers.get("hx-request"))
     filter_brand_id = parse_optional_int(brand_filter)
@@ -213,6 +214,7 @@ def move(
     note: str = Form(""),
     brand: str = Form(""),
     conn=Depends(get_conn),
+    _perm=Depends(require_permission("move")),
 ):
     brand_id = parse_optional_int(brand)
     try:
@@ -248,6 +250,7 @@ def edit(
     fi_date: str = Form(""),
     fabric_date: str = Form(""),
     brand: str = Form(""),
+    _perm=Depends(require_permission("edit")),
 ):
     brand_id = parse_optional_int(brand)
     before = conn.execute("SELECT * FROM lots WHERE id = ?", (lot_id,)).fetchone()
@@ -281,7 +284,14 @@ def edit(
 
 
 @router.post("/movements/{movement_id}/undo", response_class=HTMLResponse)
-def undo(request: Request, movement_id: int, lot_id: int = Form(...), brand: str = Form(""), conn=Depends(get_conn)):
+def undo(
+    request: Request,
+    movement_id: int,
+    lot_id: int = Form(...),
+    brand: str = Form(""),
+    conn=Depends(get_conn),
+    _perm=Depends(require_permission("move")),
+):
     brand_id = parse_optional_int(brand)
     is_htmx = bool(request.headers.get("hx-request"))
 
@@ -312,7 +322,13 @@ def undo(request: Request, movement_id: int, lot_id: int = Form(...), brand: str
 
 
 @router.post("/lots/{lot_id}/ship", response_class=HTMLResponse)
-def ship(request: Request, lot_id: int, brand: str = Form(""), conn=Depends(get_conn)):
+def ship(
+    request: Request,
+    lot_id: int,
+    brand: str = Form(""),
+    conn=Depends(get_conn),
+    _perm=Depends(require_permission("ship")),
+):
     brand_id = parse_optional_int(brand)
     try:
         operations.mark_shipped(conn, lot_id=lot_id)
@@ -333,7 +349,13 @@ def ship(request: Request, lot_id: int, brand: str = Form(""), conn=Depends(get_
 
 
 @router.post("/lots/{lot_id}/reopen", response_class=HTMLResponse)
-def reopen(request: Request, lot_id: int, brand: str = Form(""), conn=Depends(get_conn)):
+def reopen(
+    request: Request,
+    lot_id: int,
+    brand: str = Form(""),
+    conn=Depends(get_conn),
+    _perm=Depends(require_permission("ship")),
+):
     brand_id = parse_optional_int(brand)
     is_htmx = bool(request.headers.get("hx-request"))
     try:

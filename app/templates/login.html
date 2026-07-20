@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DPR — Log in</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main style="display:block; max-width:360px; margin:80px auto;">
+    <h2>DPR</h2>
+    {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>User<br>
+        <select name="user_id" required style="width:100%; padding:6px; margin-top:4px;">
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <br><br>
+      <label>Password<br>
+        <input type="password" name="password" required style="width:100%; padding:6px; margin-top:4px;">
+      </label>
+      <br><br>
+      <button type="submit">Log in</button>
+    </form>
+  </main>
+</body>
+</html>

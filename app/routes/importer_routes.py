@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from app.importer import import_workbook
-from app.web import base_context, get_conn, new_toast_id, templates
+from app.web import base_context, get_conn, new_toast_id, require_permission, templates
 
 router = APIRouter()
 
@@ -30,6 +30,7 @@ def import_form(
     undo_url: str = "",
     undo_lot_id: str = "",
     conn=Depends(get_conn),
+    _perm=Depends(require_permission("edit")),
 ):
     (existing_lot_count,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
     return templates.TemplateResponse(
@@ -50,7 +51,13 @@ def import_form(
 
 
 @router.post("/import", response_class=HTMLResponse)
-def do_import(request: Request, file: UploadFile, mode: str = Form("add"), conn=Depends(get_conn)):
+def do_import(
+    request: Request,
+    file: UploadFile,
+    mode: str = Form("add"),
+    conn=Depends(get_conn),
+    _perm=Depends(require_permission("edit")),
+):
     result = None
     error = ""
     with tempfile.TemporaryDirectory() as tmp:
