@@ -292,3 +292,79 @@ def test_reopen_lot_refuses_when_not_shipped(conn, brand_ids, stage_ids, user_id
     lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
     with pytest.raises(operations.MoveError, match="not shipped"):
         operations.reopen_lot(conn, lot_id=lot_id)
+
+
+# --- Auto-archive on reaching Dispatched (new-format stage, not in the default seed) ---
+
+def _add_dispatched_stage(conn) -> int:
+    (max_rank,) = conn.execute("SELECT COALESCE(MAX(rank), 0) FROM stages").fetchone()
+    cur = conn.execute("INSERT INTO stages (name, rank) VALUES ('Dispatched', ?)", (max_rank + 1,))
+    conn.commit()
+    return cur.lastrowid
+
+
+def test_moving_all_pieces_to_dispatched_auto_archives_lot(conn, brand_ids, stage_ids, user_id):
+    dispatched_id = _add_dispatched_stage(conn)
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.move_pieces(
+        conn, lot_id=lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=dispatched_id, qty=1000, moved_by=user_id,
+    )
+    lot = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["closed_at"] is not None
+    check_invariants(conn)
+
+
+def test_partial_move_to_dispatched_does_not_archive_yet(conn, brand_ids, stage_ids, user_id):
+    dispatched_id = _add_dispatched_stage(conn)
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.move_pieces(
+        conn, lot_id=lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=dispatched_id, qty=400, moved_by=user_id,
+    )
+    lot = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["closed_at"] is None  # 600 pieces still in Under Cutting
+
+
+def test_undoing_the_move_into_dispatched_reopens_the_lot(conn, brand_ids, stage_ids, user_id):
+    dispatched_id = _add_dispatched_stage(conn)
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    movement_id = operations.move_pieces(
+        conn, lot_id=lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=dispatched_id, qty=1000, moved_by=user_id,
+    )
+    assert conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()["closed_at"] is not None
+
+    operations.undo_movement(conn, movement_id=movement_id, moved_by=user_id)
+    lot = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["closed_at"] is None
+    position = conn.execute("SELECT stage_id FROM positions WHERE lot_id = ?", (lot_id,)).fetchone()
+    assert position["stage_id"] == stage_ids["Under Cutting"]
+    check_invariants(conn)
+
+
+def test_auto_reopen_never_touches_a_lot_closed_via_mark_shipped(conn, brand_ids, stage_ids, user_id):
+    # Regression guard: a lot manually shipped at FI Done (the pre-existing,
+    # unrelated close mechanism) must never be reopened by an unrelated
+    # move/undo elsewhere in the app just because Dispatched now exists.
+    _add_dispatched_stage(conn)
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.move_pieces(
+        conn, lot_id=lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=stage_ids["FI Done"], qty=1000, moved_by=user_id,
+    )
+    operations.mark_shipped(conn, lot_id=lot_id)
+    assert conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()["closed_at"] is not None
+
+    # An unrelated lot moving around (including into/out of Dispatched) must not
+    # affect the already-shipped lot above.
+    other_lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=200, ct="OTHER1")
+    movement_id = operations.move_pieces(
+        conn, lot_id=other_lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=conn.execute("SELECT id FROM stages WHERE name = 'Dispatched'").fetchone()["id"],
+        qty=200, moved_by=user_id,
+    )
+    operations.undo_movement(conn, movement_id=movement_id, moved_by=user_id)
+
+    still_closed = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert still_closed["closed_at"] is not None

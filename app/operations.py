@@ -21,6 +21,42 @@ def _stage_name(conn: sqlite3.Connection, stage_id: int) -> str:
     return row["name"] if row else f"stage {stage_id}"
 
 
+def _dispatched_stage_id(conn: sqlite3.Connection) -> int | None:
+    row = conn.execute("SELECT id FROM stages WHERE name = 'Dispatched'").fetchone()
+    return row["id"] if row else None
+
+
+def _maybe_auto_close_on_dispatch(
+    conn: sqlite3.Connection, lot_id: int, to_stage_id: int, dispatched_id: int | None
+) -> None:
+    """Reaching Dispatched auto-archives a lot, the moment all its pieces are
+    there - mirrors mark_shipped, just automatic. No-op if this move's
+    destination isn't Dispatched, or the app has no Dispatched stage."""
+    if dispatched_id is None or to_stage_id != dispatched_id:
+        return
+    positions = conn.execute(
+        "SELECT stage_id FROM positions WHERE lot_id = ?", (lot_id,)
+    ).fetchall()
+    if positions and all(p["stage_id"] == dispatched_id for p in positions):
+        conn.execute(
+            "UPDATE lots SET closed_at = ? WHERE id = ? AND closed_at IS NULL", (_now(), lot_id)
+        )
+
+
+def _maybe_auto_reopen_on_undispatch(
+    conn: sqlite3.Connection, lot_id: int, undone_to_stage_id: int, dispatched_id: int | None
+) -> None:
+    """Symmetric with the above: undoing the specific movement that sent a lot
+    to Dispatched reopens it. Only triggers for that exact movement (not any
+    unrelated move/undo on a closed lot), so a lot closed the old way - via
+    mark_shipped at FI Done - is never touched by this."""
+    if dispatched_id is None or undone_to_stage_id != dispatched_id:
+        return
+    conn.execute(
+        "UPDATE lots SET closed_at = NULL WHERE id = ? AND closed_at IS NOT NULL", (lot_id,)
+    )
+
+
 def _apply_move(
     conn: sqlite3.Connection,
     *,
@@ -144,8 +180,9 @@ def move_pieces(
     moved_at: str | None = None,
 ) -> int:
     moved_at = moved_at or _now()
+    dispatched_id = _dispatched_stage_id(conn)
     with db.transaction(conn):
-        return _apply_move(
+        movement_id = _apply_move(
             conn,
             lot_id=lot_id,
             from_stage_id=from_stage_id,
@@ -156,6 +193,8 @@ def move_pieces(
             note=note,
             reverses_id=None,
         )
+        _maybe_auto_close_on_dispatch(conn, lot_id, to_stage_id, dispatched_id)
+        return movement_id
 
 
 def undo_movement(
@@ -206,8 +245,9 @@ def undo_movement(
             f"{_stage_name(conn, movement['to_stage_id'])}. Undo the later moves first."
         )
 
+    dispatched_id = _dispatched_stage_id(conn)
     with db.transaction(conn):
-        return _apply_move(
+        new_movement_id = _apply_move(
             conn,
             lot_id=movement["lot_id"],
             from_stage_id=movement["to_stage_id"],
@@ -218,6 +258,8 @@ def undo_movement(
             note=note,
             reverses_id=movement_id,
         )
+        _maybe_auto_reopen_on_undispatch(conn, movement["lot_id"], movement["to_stage_id"], dispatched_id)
+        return new_movement_id
 
 
 def update_lot_details(

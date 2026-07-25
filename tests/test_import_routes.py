@@ -9,14 +9,14 @@ from pathlib import Path
 
 from app import db
 
-FIXTURE = Path(__file__).parent / "fixtures" / "june_dpr.xlsx"
+FIXTURE = Path(__file__).parent / "fixtures" / "all_brand_dpr.xlsx"
 
 
 def _upload(client, mode):
     with FIXTURE.open("rb") as f:
         return client.post(
             "/import",
-            files={"file": ("june_dpr.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+            files={"file": ("all_brand_dpr.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             data={"mode": mode},
         )
 
@@ -27,7 +27,7 @@ def test_import_route_add_mode_skips_duplicates(client):
     conn = db.get_connection()
     (count,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
     conn.close()
-    assert count == 135
+    assert count == 330
 
     second = _upload(client, "add")
     assert second.status_code == 200
@@ -39,14 +39,14 @@ def test_import_route_replace_mode_actually_wipes_first(client):
     conn = db.get_connection()
     (before,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
     conn.close()
-    assert before == 135
+    assert before == 330
 
     resp = _upload(client, "replace")
     assert resp.status_code == 200
     assert "Replaced existing data" in resp.text
-    assert "Imported 135 lots" in resp.text
+    assert "Imported 330 lots" in resp.text
 
     conn = db.get_connection()
     (after,) = conn.execute("SELECT COUNT(*) FROM lots").fetchone()
     conn.close()
-    assert after == 135  # not 135+135 - proves the wipe actually happened
+    assert after == 330  # not 330+330 - proves the wipe actually happened

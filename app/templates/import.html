@@ -27,11 +27,17 @@
         {% for sheet, ct in result.skipped_duplicates %}<li>{{ sheet }}: {{ ct }}</li>{% endfor %}
       </ul>
       {% endif %}
-      {% if result.unmapped_statuses %}
-      <p><strong>{{ result.unmapped_statuses|length }} row(s) skipped — status text not recognized:</strong></p>
-      <ul>
-        {% for sheet, ct, status in result.unmapped_statuses %}<li>{{ sheet }}: {{ ct }} — "{{ status }}"</li>{% endfor %}
-      </ul>
+      {% if result.created_brands %}
+      <p><strong>New brands created:</strong> {{ result.created_brands|join(", ") }}</p>
+      {% endif %}
+      {% if result.created_sub_brands %}
+      <p><strong>New sub-brands created:</strong>
+        {% for brand, sub in result.created_sub_brands %}{{ brand }} — {{ sub }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+      {% endif %}
+      {% if result.created_stages %}
+      <p><strong>New stages created:</strong> {{ result.created_stages|join(", ") }}
+        (check the order under Settings → Stages)</p>
       {% endif %}
     </div>
     {% endif %}

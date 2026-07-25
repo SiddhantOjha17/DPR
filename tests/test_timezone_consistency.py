@@ -13,7 +13,7 @@ from app import operations
 from app.importer import import_workbook
 from app.routes.main_screen import fetch_grouped_positions
 
-FIXTURE = Path(__file__).parent / "fixtures" / "june_dpr.xlsx"
+FIXTURE = Path(__file__).parent / "fixtures" / "all_brand_dpr.xlsx"
 
 
 def test_days_in_stage_current_after_import_does_not_raise(conn):
@@ -33,5 +33,10 @@ def test_days_in_stage_historical_after_import_does_not_raise(conn):
 def test_main_screen_grouping_after_import_does_not_raise(conn):
     import_workbook(str(FIXTURE), conn)
     data = fetch_grouped_positions(conn, brand_id=None)
-    assert data["grand_total"] == 90908
-    assert sum(len(g["rows"]) for g in data["groups"]) == 135
+    # 74 of the 330 imported lots have STAGE "Dispatched" and land in Archive
+    # directly, so only the remaining 256 open lots' pieces show on the main screen.
+    (open_pieces,) = conn.execute(
+        "SELECT COALESCE(SUM(total_qty), 0) FROM lots WHERE closed_at IS NULL"
+    ).fetchone()
+    assert data["grand_total"] == open_pieces
+    assert sum(len(g["rows"]) for g in data["groups"]) == 256
