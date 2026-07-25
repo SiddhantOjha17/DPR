@@ -160,110 +160,112 @@ def import_workbook(
     is an additive "Add" import.
     """
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        result = ImportResult()
+        now = datetime.now(timezone.utc)
+        created_at = now.isoformat()
 
-    result = ImportResult()
-    now = datetime.now(timezone.utc)
-    created_at = now.isoformat()
+        with db.transaction(conn):
+            if wipe_existing:
+                conn.execute("DELETE FROM lots")
+                result.replaced = True
 
-    with db.transaction(conn):
-        if wipe_existing:
-            conn.execute("DELETE FROM lots")
-            result.replaced = True
+            brand_cache: dict[str, int] = {}
+            sub_brand_cache: dict[tuple[int, str], int] = {}
+            stage_cache: dict[str, int] = {}
 
-        brand_cache: dict[str, int] = {}
-        sub_brand_cache: dict[tuple[int, str], int] = {}
-        stage_cache: dict[str, int] = {}
+            _sync_stages_sheet(conn, wb, stage_cache, result.created_stages)
 
-        _sync_stages_sheet(conn, wb, stage_cache, result.created_stages)
+            existing_cts = {row["ct_number"] for row in conn.execute("SELECT ct_number FROM lots")}
 
-        existing_cts = {row["ct_number"] for row in conn.execute("SELECT ct_number FROM lots")}
-
-        for sheet_name in wb.sheetnames:
-            if sheet_name in NON_BRAND_SHEETS:
-                continue
-            ws = wb[sheet_name]
-            brand_id = _get_or_create_brand(conn, sheet_name, brand_cache, result.created_brands)
-            sheet_pieces = 0
-
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                qty = _cell(row, COLUMNS["qty"])
-                if not isinstance(qty, (int, float)):
+            for sheet_name in wb.sheetnames:
+                if sheet_name in NON_BRAND_SHEETS:
                     continue
+                ws = wb[sheet_name]
+                brand_id = _get_or_create_brand(conn, sheet_name, brand_cache, result.created_brands)
+                sheet_pieces = 0
 
-                stage_name = _trim(_cell(row, COLUMNS["stage"]))
-                if not stage_name:
-                    continue
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    qty = _cell(row, COLUMNS["qty"])
+                    if not isinstance(qty, (int, float)):
+                        continue
 
-                ct = _cell(row, COLUMNS["ct"])
-                ct_number = str(ct) if ct is not None else ""
+                    stage_name = _trim(_cell(row, COLUMNS["stage"]))
+                    if not stage_name:
+                        continue
 
-                # Some rows genuinely have a blank CT - never treat blanks as
-                # duplicates of each other.
-                if ct_number and ct_number in existing_cts:
-                    result.skipped_duplicates.append((sheet_name, ct_number))
-                    continue
+                    ct = _cell(row, COLUMNS["ct"])
+                    ct_number = str(ct) if ct is not None else ""
 
-                stage_id = _get_or_create_stage(conn, stage_name, stage_cache, result.created_stages)
+                    # Some rows genuinely have a blank CT - never treat blanks as
+                    # duplicates of each other.
+                    if ct_number and ct_number in existing_cts:
+                        result.skipped_duplicates.append((sheet_name, ct_number))
+                        continue
 
-                sub_brand_name = _trim(_cell(row, COLUMNS["sub_brand"]))
-                sub_brand_id = _get_or_create_sub_brand(
-                    conn, brand_id, sheet_name, sub_brand_name, sub_brand_cache, result.created_sub_brands
-                )
+                    stage_id = _get_or_create_stage(conn, stage_name, stage_cache, result.created_stages)
 
-                # DAYS, when a real number, back-dates entered_at so "Days in
-                # stage" is accurate immediately - not "how long ago this lot
-                # was created", so it's used for position/movement timestamps
-                # only, never for lots.created_at (which stays the real import
-                # time - cycle-time analytics needs that to mean what it says).
-                days_value = _cell(row, COLUMNS["days"])
-                if isinstance(days_value, (int, float)) and days_value >= 0:
-                    entered_at = (now - timedelta(days=days_value)).isoformat()
-                else:
-                    entered_at = created_at
+                    sub_brand_name = _trim(_cell(row, COLUMNS["sub_brand"]))
+                    sub_brand_id = _get_or_create_sub_brand(
+                        conn, brand_id, sheet_name, sub_brand_name, sub_brand_cache, result.created_sub_brands
+                    )
 
-                wash = _cell(row, COLUMNS["wash"])
-                remark = _cell(row, COLUMNS["remark"])
+                    # DAYS, when a real number, back-dates entered_at so "Days in
+                    # stage" is accurate immediately - not "how long ago this lot
+                    # was created", so it's used for position/movement timestamps
+                    # only, never for lots.created_at (which stays the real import
+                    # time - cycle-time analytics needs that to mean what it says).
+                    days_value = _cell(row, COLUMNS["days"])
+                    if isinstance(days_value, (int, float)) and days_value >= 0:
+                        entered_at = (now - timedelta(days=days_value)).isoformat()
+                    else:
+                        entered_at = created_at
 
-                cur = conn.execute(
-                    "INSERT INTO lots "
-                    "(brand_id, sub_brand_id, ct_number, material_code, fabric, wash, "
-                    "total_qty, fi_date, fabric_date, remark, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        brand_id,
-                        sub_brand_id,
-                        ct_number,
-                        str(_cell(row, COLUMNS["code"]) or "") or None,
-                        str(_cell(row, COLUMNS["fabric"]) or "") or None,
-                        str(wash) if wash else None,
-                        int(qty),
-                        _as_date(_cell(row, COLUMNS["fi_date"])),
-                        _as_date(_cell(row, COLUMNS["fabric_date"])),
-                        str(remark) if remark else None,
-                        created_at,
-                    ),
-                )
-                lot_id = cur.lastrowid
-                conn.execute(
-                    "INSERT INTO positions (lot_id, stage_id, qty, entered_at) VALUES (?, ?, ?, ?)",
-                    (lot_id, stage_id, int(qty), entered_at),
-                )
-                conn.execute(
-                    "INSERT INTO movements "
-                    "(lot_id, from_stage_id, to_stage_id, qty, moved_at, moved_by, note) "
-                    "VALUES (?, NULL, ?, ?, ?, ?, ?)",
-                    (lot_id, stage_id, int(qty), entered_at, moved_by, "opening import"),
-                )
+                    wash = _cell(row, COLUMNS["wash"])
+                    remark = _cell(row, COLUMNS["remark"])
 
-                if stage_name.upper() == DISPATCHED_STAGE_NAME.upper():
-                    conn.execute("UPDATE lots SET closed_at = ? WHERE id = ?", (entered_at, lot_id))
+                    cur = conn.execute(
+                        "INSERT INTO lots "
+                        "(brand_id, sub_brand_id, ct_number, material_code, fabric, wash, "
+                        "total_qty, fi_date, fabric_date, remark, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            brand_id,
+                            sub_brand_id,
+                            ct_number,
+                            str(_cell(row, COLUMNS["code"]) or "") or None,
+                            str(_cell(row, COLUMNS["fabric"]) or "") or None,
+                            str(wash) if wash else None,
+                            int(qty),
+                            _as_date(_cell(row, COLUMNS["fi_date"])),
+                            _as_date(_cell(row, COLUMNS["fabric_date"])),
+                            str(remark) if remark else None,
+                            created_at,
+                        ),
+                    )
+                    lot_id = cur.lastrowid
+                    conn.execute(
+                        "INSERT INTO positions (lot_id, stage_id, qty, entered_at) VALUES (?, ?, ?, ?)",
+                        (lot_id, stage_id, int(qty), entered_at),
+                    )
+                    conn.execute(
+                        "INSERT INTO movements "
+                        "(lot_id, from_stage_id, to_stage_id, qty, moved_at, moved_by, note) "
+                        "VALUES (?, NULL, ?, ?, ?, ?, ?)",
+                        (lot_id, stage_id, int(qty), entered_at, moved_by, "opening import"),
+                    )
 
-                if ct_number:
-                    existing_cts.add(ct_number)
-                result.total_lots += 1
-                result.total_pieces += int(qty)
-                sheet_pieces += int(qty)
+                    if stage_name.upper() == DISPATCHED_STAGE_NAME.upper():
+                        conn.execute("UPDATE lots SET closed_at = ? WHERE id = ?", (entered_at, lot_id))
 
-            result.per_brand[sheet_name] = sheet_pieces
+                    if ct_number:
+                        existing_cts.add(ct_number)
+                    result.total_lots += 1
+                    result.total_pieces += int(qty)
+                    sheet_pieces += int(qty)
 
-    return result
+                result.per_brand[sheet_name] = sheet_pieces
+
+        return result
+    finally:
+        wb.close()
