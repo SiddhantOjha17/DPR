@@ -50,7 +50,7 @@ def settings_screen(
     undo_value: str = "",
     conn=Depends(get_conn),
 ):
-    stages = conn.execute("SELECT * FROM stages ORDER BY rank").fetchall()
+    stages = conn.execute("SELECT * FROM stages WHERE active = 1 ORDER BY rank, id").fetchall()
     brands = conn.execute("SELECT * FROM brands ORDER BY name").fetchall()
     sub_brands = conn.execute(
         "SELECT sb.*, b.name AS brand_name FROM sub_brands sb JOIN brands b ON b.id = sb.brand_id "
@@ -90,7 +90,7 @@ def add_stage(name: str = Form(...), conn=Depends(get_conn)):
     (max_rank,) = conn.execute("SELECT COALESCE(MAX(rank), 0) FROM stages").fetchone()
     cur = conn.execute("INSERT INTO stages (name, rank) VALUES (?, ?)", (name, max_rank + 1))
     conn.commit()
-    return _redirect(f"Added stage {name}.", undo_url=f"/settings/stages/{cur.lastrowid}/toggle-active")
+    return _redirect(f"Added stage {name}.", undo_url=f"/settings/stages/{cur.lastrowid}/delete")
 
 
 @router.post("/settings/stages/{stage_id}/rename")
@@ -103,27 +103,21 @@ def rename_stage(stage_id: int, name: str = Form(...), conn=Depends(get_conn)):
     )
 
 
-@router.post("/settings/stages/{stage_id}/toggle-active")
-def toggle_stage(stage_id: int, conn=Depends(get_conn)):
-    stage = conn.execute("SELECT active, name FROM stages WHERE id = ?", (stage_id,)).fetchone()
-    conn.execute("UPDATE stages SET active = 1 - active WHERE id = ?", (stage_id,))
+@router.post("/settings/stages/{stage_id}/delete")
+def delete_stage(stage_id: int, conn=Depends(get_conn)):
+    stage = conn.execute("SELECT name FROM stages WHERE id = ?", (stage_id,)).fetchone()
+    conn.execute("UPDATE stages SET active = 0 WHERE id = ?", (stage_id,))
     conn.commit()
-    message = f"{stage['name']} removed." if stage["active"] else f"{stage['name']} restored."
-    return _redirect(message, undo_url=f"/settings/stages/{stage_id}/toggle-active")
+    return _redirect(f"{stage['name']} removed.")
 
 
 @router.post("/settings/stages/{stage_id}/move")
 def move_stage(stage_id: int, direction: str = Form(...), conn=Depends(get_conn)):
-    stage = conn.execute("SELECT * FROM stages WHERE id = ?", (stage_id,)).fetchone()
-    if direction == "up":
-        neighbor = conn.execute(
-            "SELECT * FROM stages WHERE rank < ? ORDER BY rank DESC LIMIT 1", (stage["rank"],)
-        ).fetchone()
-    else:
-        neighbor = conn.execute(
-            "SELECT * FROM stages WHERE rank > ? ORDER BY rank ASC LIMIT 1", (stage["rank"],)
-        ).fetchone()
-    if neighbor:
+    ordered = conn.execute("SELECT * FROM stages WHERE active = 1 ORDER BY rank, id").fetchall()
+    index = next(i for i, s in enumerate(ordered) if s["id"] == stage_id)
+    neighbor_index = index - 1 if direction == "up" else index + 1
+    if 0 <= neighbor_index < len(ordered):
+        stage, neighbor = ordered[index], ordered[neighbor_index]
         conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (neighbor["rank"], stage["id"]))
         conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (stage["rank"], neighbor["id"]))
         conn.commit()

@@ -18,7 +18,7 @@
   <section>
     <h3>Stages</h3>
     <table class="settings-table">
-      <thead><tr><th>Rank</th><th>Name</th><th>Active</th><th></th></tr></thead>
+      <thead><tr><th>Rank</th><th>Name</th><th></th></tr></thead>
       <tbody>
         {% for s in stages %}
         <tr>
@@ -29,7 +29,6 @@
               <button type="submit">Save</button>
             </form>
           </td>
-          <td>{{ "Yes" if s.active else "No" }}</td>
           <td>
             <form method="post" action="/settings/stages/{{ s.id }}/move" class="inline">
               <input type="hidden" name="direction" value="up"><button type="submit">↑</button>
@@ -37,12 +36,8 @@
             <form method="post" action="/settings/stages/{{ s.id }}/move" class="inline">
               <input type="hidden" name="direction" value="down"><button type="submit">↓</button>
             </form>
-            <form method="post" action="/settings/stages/{{ s.id }}/toggle-active" class="inline">
-              {% if s.active %}
+            <form method="post" action="/settings/stages/{{ s.id }}/delete" class="inline">
               <button type="submit" class="icon-btn danger" title="Remove">🗑</button>
-              {% else %}
-              <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
-              {% endif %}
             </form>
           </td>
         </tr>
