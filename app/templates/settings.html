@@ -53,7 +53,7 @@
   <section>
     <h3>Brands</h3>
     <table class="settings-table">
-      <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th></th></tr></thead>
       <tbody>
         {% for b in brands %}
         <tr>
@@ -63,14 +63,9 @@
               <button type="submit">Save</button>
             </form>
           </td>
-          <td>{{ "Yes" if b.active else "No" }}</td>
           <td>
-            <form method="post" action="/settings/brands/{{ b.id }}/toggle-active" class="inline">
-              {% if b.active %}
+            <form method="post" action="/settings/brands/{{ b.id }}/delete" class="inline">
               <button type="submit" class="icon-btn danger" title="Remove">🗑</button>
-              {% else %}
-              <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
-              {% endif %}
             </form>
           </td>
         </tr>
@@ -116,7 +111,7 @@
     <h3>Roles</h3>
     <p class="section-note">Each role is a bundle of what its users can do. Assign roles to people below.</p>
     <table class="settings-table">
-      <thead><tr><th>Name</th><th>Move/undo</th><th>Edit/add lot</th><th>Ship/reopen</th><th>Settings &amp; admin</th><th>Active</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>Move/undo</th><th>Edit/add lot</th><th>Ship/reopen</th><th>Settings &amp; admin</th><th></th></tr></thead>
       <tbody>
         {% for r in roles %}
         <form id="roleform-{{ r.id }}" method="post" action="/settings/roles/{{ r.id }}/update"></form>
@@ -126,7 +121,6 @@
           <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_edit" value="true" {% if r.can_edit %}checked{% endif %}></td>
           <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_ship" value="true" {% if r.can_ship %}checked{% endif %}></td>
           <td style="text-align:center"><input form="roleform-{{ r.id }}" type="checkbox" name="can_admin" value="true" {% if r.can_admin %}checked{% endif %}></td>
-          <td>{{ "Yes" if r.active else "No" }}</td>
           <td><button form="roleform-{{ r.id }}" type="submit">Save</button></td>
         </tr>
         {% endfor %}
@@ -134,12 +128,8 @@
     </table>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:-8px; margin-bottom:12px;">
       {% for r in roles %}
-      <form method="post" action="/settings/roles/{{ r.id }}/toggle-active" class="inline">
-        {% if r.active %}
+      <form method="post" action="/settings/roles/{{ r.id }}/delete" class="inline">
         <button type="submit" class="icon-btn danger" title="Remove {{ r.name }}">🗑 {{ r.name }}</button>
-        {% else %}
-        <button type="submit" class="icon-btn" title="Restore {{ r.name }}">↺ Restore {{ r.name }}</button>
-        {% endif %}
       </form>
       {% endfor %}
     </div>
@@ -152,7 +142,7 @@
   <section>
     <h3>Users</h3>
     <table class="settings-table">
-      <thead><tr><th>Name</th><th>Role</th><th>Active</th><th></th><th>Password</th></tr></thead>
+      <thead><tr><th>Name</th><th>Role</th><th></th><th>Password</th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
@@ -167,21 +157,14 @@
               <select name="role_id" onchange="this.form.submit()">
                 <option value="">— no role —</option>
                 {% for r in roles %}
-                {% if r.active %}
                 <option value="{{ r.id }}" {% if u.role_id == r.id %}selected{% endif %}>{{ r.name }}</option>
-                {% endif %}
                 {% endfor %}
               </select>
             </form>
           </td>
-          <td>{{ "Yes" if u.active else "No" }}</td>
           <td>
-            <form method="post" action="/settings/users/{{ u.id }}/toggle-active" class="inline">
-              {% if u.active %}
+            <form method="post" action="/settings/users/{{ u.id }}/delete" class="inline">
               <button type="submit" class="icon-btn danger" title="Remove">🗑</button>
-              {% else %}
-              <button type="submit" class="icon-btn" title="Restore">↺ Restore</button>
-              {% endif %}
             </form>
           </td>
           <td>

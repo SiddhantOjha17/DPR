@@ -249,23 +249,29 @@ def edit(
     wash: str = Form(""),
     fi_date: str = Form(""),
     fabric_date: str = Form(""),
+    total_qty: str = Form(""),
     brand: str = Form(""),
     _perm=Depends(require_permission("edit")),
 ):
     brand_id = parse_optional_int(brand)
     before = conn.execute("SELECT * FROM lots WHERE id = ?", (lot_id,)).fetchone()
 
-    operations.update_lot_details(
-        conn,
-        lot_id=lot_id,
-        sub_brand_id=int(sub_brand_id) if sub_brand_id else None,
-        remark=remark or None,
-        material_code=material_code or None,
-        fabric=fabric or None,
-        wash=wash or None,
-        fi_date=fi_date or None,
-        fabric_date=fabric_date or None,
-    )
+    try:
+        operations.update_lot_details(
+            conn,
+            lot_id=lot_id,
+            sub_brand_id=int(sub_brand_id) if sub_brand_id else None,
+            remark=remark or None,
+            material_code=material_code or None,
+            fabric=fabric or None,
+            wash=wash or None,
+            fi_date=fi_date or None,
+            fabric_date=fabric_date or None,
+            total_qty=int(total_qty) if total_qty else None,
+        )
+    except MoveError as e:
+        return _render_panel(request, conn, lot_id, brand_id, error_message=str(e))
+
     return _render_panel_and_table(
         request, conn, lot_id, brand_id,
         toast_message="Saved.",
@@ -279,6 +285,7 @@ def edit(
             "wash": before["wash"] or "",
             "fi_date": (before["fi_date"] or "")[:10],
             "fabric_date": (before["fabric_date"] or "")[:10],
+            "total_qty": before["total_qty"],
         },
     )
 

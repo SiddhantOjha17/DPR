@@ -368,3 +368,60 @@ def test_auto_reopen_never_touches_a_lot_closed_via_mark_shipped(conn, brand_ids
 
     still_closed = conn.execute("SELECT closed_at FROM lots WHERE id = ?", (lot_id,)).fetchone()
     assert still_closed["closed_at"] is not None
+
+
+# --- Editing a lot's quantity ---
+
+def test_editing_qty_updates_lot_and_its_single_position(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.update_lot_details(conn, lot_id=lot_id, total_qty=750)
+
+    lot = conn.execute("SELECT total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["total_qty"] == 750
+    position = conn.execute("SELECT qty FROM positions WHERE lot_id = ?", (lot_id,)).fetchone()
+    assert position["qty"] == 750
+    check_invariants(conn)
+
+
+def test_editing_qty_to_same_value_is_a_no_op(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.update_lot_details(conn, lot_id=lot_id, total_qty=1000)
+    check_invariants(conn)
+
+
+def test_editing_qty_rejects_zero_or_negative(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    with pytest.raises(operations.MoveError, match="at least 1"):
+        operations.update_lot_details(conn, lot_id=lot_id, total_qty=0)
+
+    lot = conn.execute("SELECT total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["total_qty"] == 1000  # unchanged
+
+
+def test_editing_qty_blocked_when_lot_is_split_across_stages(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.move_pieces(
+        conn, lot_id=lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=stage_ids["Under Sewing"], qty=500, moved_by=user_id,
+    )
+    with pytest.raises(operations.MoveError, match="split across stages"):
+        operations.update_lot_details(conn, lot_id=lot_id, total_qty=750)
+
+    lot = conn.execute("SELECT total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["total_qty"] == 1000  # unchanged
+    check_invariants(conn)
+
+
+def test_editing_other_fields_on_a_split_lot_still_works(conn, brand_ids, stage_ids, user_id):
+    # A split lot's total_qty can't change (ambiguous which position to adjust),
+    # but that must not block unrelated field edits like remark - total_qty is
+    # only acted on when it's actually being changed.
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, qty=1000)
+    operations.move_pieces(
+        conn, lot_id=lot_id, from_stage_id=stage_ids["Under Cutting"],
+        to_stage_id=stage_ids["Under Sewing"], qty=500, moved_by=user_id,
+    )
+    operations.update_lot_details(conn, lot_id=lot_id, remark="checked", total_qty=1000)
+    lot = conn.execute("SELECT remark, total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["remark"] == "checked"
+    assert lot["total_qty"] == 1000

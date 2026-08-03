@@ -248,7 +248,7 @@ def test_cannot_remove_admin_bundle_from_last_admin_role(client):
 
 def test_cannot_deactivate_last_admin_user(client):
     owner_id = _owner_user_id()
-    resp = client.post(f"/settings/users/{owner_id}/toggle-active", follow_redirects=True)
+    resp = client.post(f"/settings/users/{owner_id}/delete", follow_redirects=True)
     assert "leave no one able to manage Settings" in resp.text
 
     conn = db.get_connection()
@@ -264,7 +264,7 @@ def test_can_deactivate_admin_when_another_admin_exists(client):
     second_admin_id = _make_user(conn, "Second Admin", owner_role_id, "second-pass")
     conn.close()
 
-    resp = client.post(f"/settings/users/{owner_id}/toggle-active", follow_redirects=True)
+    resp = client.post(f"/settings/users/{owner_id}/delete", follow_redirects=True)
     assert "leave no one able to manage Settings" not in resp.text
 
     conn = db.get_connection()

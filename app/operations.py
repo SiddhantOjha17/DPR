@@ -273,13 +273,33 @@ def update_lot_details(
     wash: str | None = None,
     fi_date: str | None = None,
     fabric_date: str | None = None,
+    total_qty: int | None = None,
 ) -> None:
-    conn.execute(
-        "UPDATE lots SET sub_brand_id = ?, remark = ?, material_code = ?, fabric = ?, "
-        "wash = ?, fi_date = ?, fabric_date = ? WHERE id = ?",
-        (sub_brand_id, remark, material_code, fabric, wash, fi_date, fabric_date, lot_id),
-    )
-    conn.commit()
+    with db.transaction(conn):
+        if total_qty is not None:
+            current = conn.execute("SELECT total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
+            if total_qty != current["total_qty"]:
+                if total_qty <= 0:
+                    raise MoveError("Quantity must be at least 1.")
+                positions = conn.execute(
+                    "SELECT stage_id FROM positions WHERE lot_id = ?", (lot_id,)
+                ).fetchall()
+                if len(positions) != 1:
+                    raise MoveError(
+                        "Can't edit quantity while this lot is split across stages - "
+                        "move it back together first."
+                    )
+                conn.execute(
+                    "UPDATE positions SET qty = ? WHERE lot_id = ? AND stage_id = ?",
+                    (total_qty, lot_id, positions[0]["stage_id"]),
+                )
+                conn.execute("UPDATE lots SET total_qty = ? WHERE id = ?", (total_qty, lot_id))
+
+        conn.execute(
+            "UPDATE lots SET sub_brand_id = ?, remark = ?, material_code = ?, fabric = ?, "
+            "wash = ?, fi_date = ?, fabric_date = ? WHERE id = ?",
+            (sub_brand_id, remark, material_code, fabric, wash, fi_date, fabric_date, lot_id),
+        )
 
 
 def mark_shipped(conn: sqlite3.Connection, *, lot_id: int) -> None:

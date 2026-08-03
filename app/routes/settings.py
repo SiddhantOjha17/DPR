@@ -51,14 +51,15 @@ def settings_screen(
     conn=Depends(get_conn),
 ):
     stages = conn.execute("SELECT * FROM stages WHERE active = 1 ORDER BY rank, id").fetchall()
-    brands = conn.execute("SELECT * FROM brands ORDER BY name").fetchall()
+    brands = conn.execute("SELECT * FROM brands WHERE active = 1 ORDER BY name").fetchall()
     sub_brands = conn.execute(
         "SELECT sb.*, b.name AS brand_name FROM sub_brands sb JOIN brands b ON b.id = sb.brand_id "
-        "ORDER BY b.name, sb.name"
+        "WHERE b.active = 1 ORDER BY b.name, sb.name"
     ).fetchall()
-    roles = conn.execute("SELECT * FROM roles ORDER BY name").fetchall()
+    roles = conn.execute("SELECT * FROM roles WHERE active = 1 ORDER BY name").fetchall()
     users = conn.execute(
-        "SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id ORDER BY u.name"
+        "SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON r.id = u.role_id "
+        "WHERE u.active = 1 ORDER BY u.name"
     ).fetchall()
     cfg = load_config()
     return templates.TemplateResponse(
@@ -130,7 +131,7 @@ def move_stage(stage_id: int, direction: str = Form(...), conn=Depends(get_conn)
 def add_brand(name: str = Form(...), conn=Depends(get_conn)):
     cur = conn.execute("INSERT INTO brands (name) VALUES (?)", (name,))
     conn.commit()
-    return _redirect(f"Added brand {name}.", undo_url=f"/settings/brands/{cur.lastrowid}/toggle-active")
+    return _redirect(f"Added brand {name}.", undo_url=f"/settings/brands/{cur.lastrowid}/delete")
 
 
 @router.post("/settings/brands/{brand_id}/rename")
@@ -143,13 +144,12 @@ def rename_brand(brand_id: int, name: str = Form(...), conn=Depends(get_conn)):
     )
 
 
-@router.post("/settings/brands/{brand_id}/toggle-active")
-def toggle_brand(brand_id: int, conn=Depends(get_conn)):
-    brand = conn.execute("SELECT active, name FROM brands WHERE id = ?", (brand_id,)).fetchone()
-    conn.execute("UPDATE brands SET active = 1 - active WHERE id = ?", (brand_id,))
+@router.post("/settings/brands/{brand_id}/delete")
+def delete_brand(brand_id: int, conn=Depends(get_conn)):
+    brand = conn.execute("SELECT name FROM brands WHERE id = ?", (brand_id,)).fetchone()
+    conn.execute("UPDATE brands SET active = 0 WHERE id = ?", (brand_id,))
     conn.commit()
-    message = f"{brand['name']} removed." if brand["active"] else f"{brand['name']} restored."
-    return _redirect(message, undo_url=f"/settings/brands/{brand_id}/toggle-active")
+    return _redirect(f"{brand['name']} removed.")
 
 
 # --- Sub-brands ---
@@ -177,7 +177,7 @@ def rename_sub_brand(sub_brand_id: int, name: str = Form(...), conn=Depends(get_
 def add_role(name: str = Form(...), conn=Depends(get_conn)):
     cur = conn.execute("INSERT INTO roles (name) VALUES (?)", (name,))
     conn.commit()
-    return _redirect(f"Added role {name}.", undo_url=f"/settings/roles/{cur.lastrowid}/toggle-active")
+    return _redirect(f"Added role {name}.", undo_url=f"/settings/roles/{cur.lastrowid}/delete")
 
 
 @router.post("/settings/roles/{role_id}/update")
@@ -203,17 +203,16 @@ def update_role(
     return _redirect("Role updated.")
 
 
-@router.post("/settings/roles/{role_id}/toggle-active")
-def toggle_role(role_id: int, conn=Depends(get_conn)):
+@router.post("/settings/roles/{role_id}/delete")
+def delete_role(role_id: int, conn=Depends(get_conn)):
     role = conn.execute("SELECT * FROM roles WHERE id = ?", (role_id,)).fetchone()
-    if role["active"] and role["can_admin"]:
+    if role["can_admin"]:
         dependents = _role_active_user_count(conn, role_id)
         if dependents and _admin_capable_user_count(conn) - dependents <= 0:
             return _redirect(error="This would leave no one able to manage Settings — assign another admin first.")
-    conn.execute("UPDATE roles SET active = 1 - active WHERE id = ?", (role_id,))
+    conn.execute("UPDATE roles SET active = 0 WHERE id = ?", (role_id,))
     conn.commit()
-    message = f"{role['name']} removed." if role["active"] else f"{role['name']} restored."
-    return _redirect(message, undo_url=f"/settings/roles/{role_id}/toggle-active")
+    return _redirect(f"{role['name']} removed.")
 
 
 # --- Users ---
@@ -222,7 +221,7 @@ def toggle_role(role_id: int, conn=Depends(get_conn)):
 def add_user(name: str = Form(...), conn=Depends(get_conn)):
     cur = conn.execute("INSERT INTO users (name) VALUES (?)", (name,))
     conn.commit()
-    return _redirect(f"Added user {name}.", undo_url=f"/settings/users/{cur.lastrowid}/toggle-active")
+    return _redirect(f"Added user {name}.", undo_url=f"/settings/users/{cur.lastrowid}/delete")
 
 
 @router.post("/settings/users/{user_id}/rename")
@@ -235,19 +234,18 @@ def rename_user(user_id: int, name: str = Form(...), conn=Depends(get_conn)):
     )
 
 
-@router.post("/settings/users/{user_id}/toggle-active")
-def toggle_user(user_id: int, conn=Depends(get_conn)):
+@router.post("/settings/users/{user_id}/delete")
+def delete_user(user_id: int, conn=Depends(get_conn)):
     user = conn.execute(
-        "SELECT u.active, u.name, r.can_admin FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?",
+        "SELECT u.name, r.can_admin FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE u.id = ?",
         (user_id,),
     ).fetchone()
-    if user["active"] and user["can_admin"]:
+    if user["can_admin"]:
         if _admin_capable_user_count(conn, excluding_user_id=user_id) == 0:
             return _redirect(error="This would leave no one able to manage Settings — assign another admin first.")
-    conn.execute("UPDATE users SET active = 1 - active WHERE id = ?", (user_id,))
+    conn.execute("UPDATE users SET active = 0 WHERE id = ?", (user_id,))
     conn.commit()
-    message = f"{user['name']} removed." if user["active"] else f"{user['name']} restored."
-    return _redirect(message, undo_url=f"/settings/users/{user_id}/toggle-active")
+    return _redirect(f"{user['name']} removed.")
 
 
 @router.post("/settings/users/{user_id}/role")
