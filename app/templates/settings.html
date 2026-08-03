@@ -22,7 +22,7 @@
       <tbody>
         {% for s in stages %}
         <tr>
-          <td>{{ s.rank }}</td>
+          <td>{{ loop.index }}</td>
           <td>
             <form method="post" action="/settings/stages/{{ s.id }}/rename" class="inline">
               <input type="text" name="name" value="{{ s.name }}" style="width:180px">
