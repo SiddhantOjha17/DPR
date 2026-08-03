@@ -114,14 +114,19 @@ def delete_stage(stage_id: int, conn=Depends(get_conn)):
 
 @router.post("/settings/stages/{stage_id}/move")
 def move_stage(stage_id: int, direction: str = Form(...), conn=Depends(get_conn)):
-    ordered = conn.execute("SELECT * FROM stages WHERE active = 1 ORDER BY rank, id").fetchall()
-    index = next(i for i, s in enumerate(ordered) if s["id"] == stage_id)
+    # Swapping stored rank *values* silently no-ops whenever two stages already
+    # share a rank (real data has ties - see the STAGES-sheet import) - swapping
+    # both to the same value changes nothing. Swap list *positions* instead and
+    # renumber everyone to clean, unique 1..N ranks, so a click always produces
+    # a visible move regardless of any pre-existing duplicate/gapped ranks.
+    ids = [row["id"] for row in conn.execute("SELECT id FROM stages WHERE active = 1 ORDER BY rank, id")]
+    index = ids.index(stage_id)
     neighbor_index = index - 1 if direction == "up" else index + 1
-    if 0 <= neighbor_index < len(ordered):
-        stage, neighbor = ordered[index], ordered[neighbor_index]
-        conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (neighbor["rank"], stage["id"]))
-        conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (stage["rank"], neighbor["id"]))
-        conn.commit()
+    if 0 <= neighbor_index < len(ids):
+        ids[index], ids[neighbor_index] = ids[neighbor_index], ids[index]
+    for position, id_ in enumerate(ids, start=1):
+        conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (position, id_))
+    conn.commit()
     return _redirect()
 
 

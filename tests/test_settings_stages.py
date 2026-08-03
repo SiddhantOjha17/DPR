@@ -1,9 +1,15 @@
 """Settings -> Stages: deletion is one-way (no restore, no undo), and the
-up/down reorder arrows swap with the positionally-adjacent *active* row
-rather than comparing raw rank values - a prior version of `move_stage`
-compared `rank < ?` / `rank > ?` directly, which silently skipped over any
-stage tied on rank (duplicates are possible - `stages.rank` has no unique
-constraint) and could swap with a hidden inactive stage."""
+up/down reorder arrows always produce a correct, visible move.
+
+A prior version of `move_stage` swapped stored *rank values* between the
+clicked stage and its neighbor. That silently no-ops whenever the two ranks
+being swapped are already equal (real data has ties - see the STAGES-sheet
+import: "Under Cutting"/"Issued for Cutting" both landed on rank 10) - since
+swapping two equal values changes nothing, and the tiebreak (`id`) never
+changes either, the two rows' relative order was permanently stuck no matter
+how many times the arrow was clicked. The fix swaps list *positions* instead
+and renumbers the whole active list to clean 1..N ranks, so order always
+changes correctly regardless of what the underlying rank values were."""
 
 from app import db
 
@@ -15,11 +21,11 @@ def _stage_id(name: str) -> int:
     return row["id"]
 
 
-def _stage_rank(stage_id: int) -> int:
+def _active_order() -> list[str]:
     conn = db.get_connection()
-    row = conn.execute("SELECT rank FROM stages WHERE id = ?", (stage_id,)).fetchone()
+    rows = conn.execute("SELECT name FROM stages WHERE active = 1 ORDER BY rank, id").fetchall()
     conn.close()
-    return row["rank"]
+    return [row["name"] for row in rows]
 
 
 def test_deleting_a_stage_removes_it_from_the_settings_list(client):
@@ -42,66 +48,91 @@ def test_deleting_a_stage_offers_no_undo(client):
 
 
 def test_moving_first_stage_up_is_a_no_op(client):
-    top_id = _stage_id("FI Done")  # rank 1, first in the list
-    before = _stage_rank(top_id)
+    before = _active_order()
+    top_id = _stage_id(before[0])
 
     client.post(f"/settings/stages/{top_id}/move", data={"direction": "up"}, follow_redirects=True)
 
-    assert _stage_rank(top_id) == before
+    assert _active_order() == before
 
 
 def test_moving_last_stage_down_is_a_no_op(client):
-    bottom_id = _stage_id("Fabric Received")  # rank 13, last in the list
-    before = _stage_rank(bottom_id)
+    before = _active_order()
+    bottom_id = _stage_id(before[-1])
 
     client.post(f"/settings/stages/{bottom_id}/move", data={"direction": "down"}, follow_redirects=True)
 
-    assert _stage_rank(bottom_id) == before
+    assert _active_order() == before
 
 
 def test_moving_never_swaps_with_an_inactive_neighbor(client):
-    # "Under Cutting" (rank 8) sits directly above "Issued for Cutting" (rank 9).
-    # Deactivate "Issued for Cutting", then moving "Under Cutting" down should
-    # skip straight past it to "Bulk Pattern" (rank 10), not swap with the
-    # now-hidden stage.
+    # "Under Cutting" sits directly above "Issued for Cutting". Deactivate
+    # "Issued for Cutting", then moving "Under Cutting" down should skip
+    # straight past it to "Bulk Pattern", not swap with the now-hidden stage.
     under_cutting_id = _stage_id("Under Cutting")
     issued_for_cutting_id = _stage_id("Issued for Cutting")
-    bulk_pattern_id = _stage_id("Bulk Pattern")
 
     client.post(f"/settings/stages/{issued_for_cutting_id}/delete", follow_redirects=True)
-
-    under_cutting_before = _stage_rank(under_cutting_id)
-    bulk_pattern_before = _stage_rank(bulk_pattern_id)
-    issued_for_cutting_before = _stage_rank(issued_for_cutting_id)
+    before = _active_order()
+    assert "Issued for Cutting" not in before  # deactivated, invisible to reordering
 
     client.post(f"/settings/stages/{under_cutting_id}/move", data={"direction": "down"}, follow_redirects=True)
 
-    # Under Cutting and Bulk Pattern swapped ranks with each other; the
-    # deactivated stage in between was never touched.
-    assert _stage_rank(under_cutting_id) == bulk_pattern_before
-    assert _stage_rank(bulk_pattern_id) == under_cutting_before
-    assert _stage_rank(issued_for_cutting_id) == issued_for_cutting_before
+    after = _active_order()
+    # Under Cutting swapped with whatever came after it (Bulk Pattern) -
+    # everything else's relative order is unchanged.
+    ucb, bpb = before.index("Under Cutting"), before.index("Under Cutting") + 1
+    assert after[ucb] == before[bpb]
+    assert after[bpb] == before[ucb]
+    assert after[:ucb] == before[:ucb]
+    assert after[bpb + 1:] == before[bpb + 1:]
 
 
 def test_moving_with_a_tied_rank_still_produces_a_correct_swap(client):
     # Force a duplicate rank, matching what the importer's STAGES-sheet sync can
-    # produce in real data: make "Issued for Cutting" share rank 8 with
-    # "Under Cutting" (instead of its normal rank 9).
+    # produce in real data: make "Issued for Cutting" share a rank with
+    # "Under Cutting".
     under_cutting_id = _stage_id("Under Cutting")
     issued_for_cutting_id = _stage_id("Issued for Cutting")
-    bulk_pattern_id = _stage_id("Bulk Pattern")
 
     conn = db.get_connection()
-    conn.execute("UPDATE stages SET rank = 8 WHERE id = ?", (issued_for_cutting_id,))
+    under_cutting_rank = conn.execute(
+        "SELECT rank FROM stages WHERE id = ?", (under_cutting_id,)
+    ).fetchone()["rank"]
+    conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (under_cutting_rank, issued_for_cutting_id))
     conn.commit()
     conn.close()
 
-    # Ordered by (rank, id): ... Under Cutting(8), Issued for Cutting(8, tied,
-    # higher id so sorts after), Bulk Pattern(10) ...
-    # Moving Bulk Pattern up should swap with its immediate predecessor in that
-    # order - Issued for Cutting - not jump past the tie to Under Cutting.
-    client.post(f"/settings/stages/{bulk_pattern_id}/move", data={"direction": "up"}, follow_redirects=True)
+    before = _active_order()
+    assert before.index("Under Cutting") + 1 == before.index("Issued for Cutting")
 
-    assert _stage_rank(bulk_pattern_id) == 8  # took Issued for Cutting's old rank
-    assert _stage_rank(issued_for_cutting_id) == 10  # took Bulk Pattern's old rank
-    assert _stage_rank(under_cutting_id) == 8  # untouched
+    bulk_pattern_id = _stage_id("Bulk Pattern")
+    client.post(f"/settings/stages/{bulk_pattern_id}/move", data={"direction": "up"}, follow_redirects=True)
+    after = _active_order()
+    assert after.index("Bulk Pattern") == before.index("Bulk Pattern") - 1
+
+
+def test_moving_a_stage_past_its_own_rank_tied_twin_actually_moves_it(client):
+    # The exact bug this test guards against: two stages tied on the *same*
+    # rank, clicking the arrow to swap them with each other specifically
+    # (not with a third, distinctly-ranked stage) must still visibly reorder
+    # them - swapping two equal rank values is a no-op, so this only passes
+    # if the fix swaps by list position instead of by rank value.
+    under_cutting_id = _stage_id("Under Cutting")
+    issued_for_cutting_id = _stage_id("Issued for Cutting")
+
+    conn = db.get_connection()
+    under_cutting_rank = conn.execute(
+        "SELECT rank FROM stages WHERE id = ?", (under_cutting_id,)
+    ).fetchone()["rank"]
+    conn.execute("UPDATE stages SET rank = ? WHERE id = ?", (under_cutting_rank, issued_for_cutting_id))
+    conn.commit()
+    conn.close()
+
+    before = _active_order()
+    assert before.index("Under Cutting") + 1 == before.index("Issued for Cutting")
+
+    client.post(f"/settings/stages/{issued_for_cutting_id}/move", data={"direction": "up"}, follow_redirects=True)
+
+    after = _active_order()
+    assert after.index("Issued for Cutting") + 1 == after.index("Under Cutting")
