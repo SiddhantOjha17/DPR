@@ -65,8 +65,9 @@ tr.lot-row:hover { background: #f0f6ff; }
 #main-table-wrap { flex: 1 1 auto; min-width: 0; }
 #side-panel {
   flex: 0 0 340px; width: 340px; background: white; border: 1px solid #ddd;
-  border-radius: 4px; padding: 14px; min-height: 80px; max-height: calc(100vh - 100px);
+  border-radius: 4px; padding: 14px; min-height: 80px; max-height: calc(100vh - 32px);
   overflow-y: auto;
+  position: sticky; top: 16px;
 }
 #side-panel h3 { margin-top: 0; }
 #side-panel .section { margin-bottom: 18px; }
