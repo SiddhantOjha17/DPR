@@ -274,26 +274,39 @@ def update_lot_details(
     fi_date: str | None = None,
     fabric_date: str | None = None,
     total_qty: int | None = None,
+    ct_number: str | None = None,
 ) -> None:
     with db.transaction(conn):
-        if total_qty is not None:
-            current = conn.execute("SELECT total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
-            if total_qty != current["total_qty"]:
-                if total_qty <= 0:
-                    raise MoveError("Quantity must be at least 1.")
-                positions = conn.execute(
-                    "SELECT stage_id FROM positions WHERE lot_id = ?", (lot_id,)
-                ).fetchall()
-                if len(positions) != 1:
-                    raise MoveError(
-                        "Can't edit quantity while this lot is split across stages - "
-                        "move it back together first."
-                    )
-                conn.execute(
-                    "UPDATE positions SET qty = ? WHERE lot_id = ? AND stage_id = ?",
-                    (total_qty, lot_id, positions[0]["stage_id"]),
+        current = conn.execute("SELECT total_qty, ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+
+        if total_qty is not None and total_qty != current["total_qty"]:
+            if total_qty <= 0:
+                raise MoveError("Quantity must be at least 1.")
+            positions = conn.execute(
+                "SELECT stage_id FROM positions WHERE lot_id = ?", (lot_id,)
+            ).fetchall()
+            if len(positions) != 1:
+                raise MoveError(
+                    "Can't edit quantity while this lot is split across stages - "
+                    "move it back together first."
                 )
-                conn.execute("UPDATE lots SET total_qty = ? WHERE id = ?", (total_qty, lot_id))
+            conn.execute(
+                "UPDATE positions SET qty = ? WHERE lot_id = ? AND stage_id = ?",
+                (total_qty, lot_id, positions[0]["stage_id"]),
+            )
+            conn.execute("UPDATE lots SET total_qty = ? WHERE id = ?", (total_qty, lot_id))
+
+        if ct_number is not None and ct_number != current["ct_number"]:
+            # A blank CT is a tolerated, real state (some imported rows have no
+            # CT at all) - only non-blank values are checked for duplicates,
+            # matching the importer's own dedup rule.
+            if ct_number:
+                duplicate = conn.execute(
+                    "SELECT 1 FROM lots WHERE ct_number = ? AND id != ?", (ct_number, lot_id)
+                ).fetchone()
+                if duplicate:
+                    raise MoveError(f"CT {ct_number} is already used by another lot.")
+            conn.execute("UPDATE lots SET ct_number = ? WHERE id = ?", (ct_number, lot_id))
 
         conn.execute(
             "UPDATE lots SET sub_brand_id = ?, remark = ?, material_code = ?, fabric = ?, "

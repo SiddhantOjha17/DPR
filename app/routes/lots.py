@@ -250,6 +250,7 @@ def edit(
     fi_date: str = Form(""),
     fabric_date: str = Form(""),
     total_qty: str = Form(""),
+    ct_number: str = Form(""),
     brand: str = Form(""),
     _perm=Depends(require_permission("edit")),
 ):
@@ -268,6 +269,7 @@ def edit(
             fi_date=fi_date or None,
             fabric_date=fabric_date or None,
             total_qty=int(total_qty) if total_qty else None,
+            ct_number=ct_number or None,
         )
     except MoveError as e:
         return _render_panel(request, conn, lot_id, brand_id, error_message=str(e))
@@ -286,6 +288,7 @@ def edit(
             "fi_date": (before["fi_date"] or "")[:10],
             "fabric_date": (before["fabric_date"] or "")[:10],
             "total_qty": before["total_qty"],
+            "ct_number": before["ct_number"] or "",
         },
     )
 

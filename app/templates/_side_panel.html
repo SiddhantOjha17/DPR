@@ -50,6 +50,7 @@
     <h4>Edit</h4>
     <form hx-post="/lots/{{ lot.id }}/edit" hx-target="#side-panel" hx-swap="innerHTML">
       <input type="hidden" name="brand" value="{{ brand or '' }}">
+      <label>CT number <input type="text" name="ct_number" value="{{ lot.ct_number or '' }}"></label>
       <label>Qty <input type="number" name="total_qty" value="{{ lot.total_qty }}" min="1" required></label>
       <label>Sub-brand
         <select name="sub_brand_id">

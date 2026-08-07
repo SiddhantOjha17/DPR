@@ -1,6 +1,7 @@
-"""HTTP-level tests for the lot side panel's Edit form, specifically the new
-Qty field - it's the same /lots/{id}/edit route used for remark/fabric/etc.,
-now also able to correct total_qty for a lot that isn't split across stages."""
+"""HTTP-level tests for the lot side panel's Edit form, specifically the Qty
+and CT number fields - it's the same /lots/{id}/edit route used for
+remark/fabric/etc., now also able to correct total_qty for a lot that isn't
+split across stages, and to correct a lot's CT number."""
 
 from app import db
 
@@ -103,3 +104,58 @@ def test_editing_qty_blocked_on_a_split_lot_shows_error(client):
     lot = conn.execute("SELECT total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
     conn.close()
     assert lot["total_qty"] == 1000  # unchanged
+
+
+def test_editing_ct_number_via_the_panel_updates_it(client):
+    lot_id = _add_lot(client, "EDITCT1", 1000)
+
+    resp = client.post(
+        f"/lots/{lot_id}/edit",
+        data={"ct_number": "EDITCT1-FIXED", "brand": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert "Saved." in resp.text
+
+    conn = db.get_connection()
+    lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    assert lot["ct_number"] == "EDITCT1-FIXED"
+
+
+def test_editing_ct_number_to_an_existing_one_shows_error(client):
+    _add_lot(client, "EDITCT2A", 500)
+    lot_id = _add_lot(client, "EDITCT2B", 500)
+
+    resp = client.post(
+        f"/lots/{lot_id}/edit",
+        data={"ct_number": "EDITCT2A", "brand": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert "already used" in resp.text
+
+    conn = db.get_connection()
+    lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    assert lot["ct_number"] == "EDITCT2B"  # unchanged
+
+
+def test_leaving_ct_number_blank_does_not_touch_it(client):
+    # An edit that only changes another field (e.g. remark) submits ct_number
+    # blank too (nothing selected/typed) - that must mean "leave it as is",
+    # not "clear the CT number".
+    lot_id = _add_lot(client, "EDITCT3", 500)
+
+    resp = client.post(
+        f"/lots/{lot_id}/edit",
+        data={"remark": "just a note", "brand": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+
+    conn = db.get_connection()
+    lot = conn.execute("SELECT ct_number, remark FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    assert lot["ct_number"] == "EDITCT3"
+    assert lot["remark"] == "just a note"

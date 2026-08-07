@@ -425,3 +425,40 @@ def test_editing_other_fields_on_a_split_lot_still_works(conn, brand_ids, stage_
     lot = conn.execute("SELECT remark, total_qty FROM lots WHERE id = ?", (lot_id,)).fetchone()
     assert lot["remark"] == "checked"
     assert lot["total_qty"] == 1000
+
+
+# --- Editing a lot's CT number ---
+
+def test_editing_ct_number_to_a_unique_value_succeeds(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, ct="OLD1")
+    operations.update_lot_details(conn, lot_id=lot_id, ct_number="NEW1")
+    lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["ct_number"] == "NEW1"
+
+
+def test_editing_ct_number_to_the_same_value_is_a_no_op(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, ct="SAME1")
+    operations.update_lot_details(conn, lot_id=lot_id, ct_number="SAME1")
+    lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["ct_number"] == "SAME1"
+
+
+def test_editing_ct_number_rejects_a_duplicate(conn, brand_ids, stage_ids, user_id):
+    _create_lot(conn, brand_ids, stage_ids, user_id, ct="TAKEN1")
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, ct="OTHER1")
+
+    with pytest.raises(operations.MoveError, match="already used"):
+        operations.update_lot_details(conn, lot_id=lot_id, ct_number="TAKEN1")
+
+    lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["ct_number"] == "OTHER1"  # unchanged
+
+
+def test_editing_ct_number_to_blank_is_allowed(conn, brand_ids, stage_ids, user_id):
+    # Blank CTs are a tolerated, real state (some imported rows have none) -
+    # never deduped against each other, matching the importer's own rule.
+    _create_lot(conn, brand_ids, stage_ids, user_id, ct="")
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id, ct="HASONE1")
+    operations.update_lot_details(conn, lot_id=lot_id, ct_number="")
+    lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["ct_number"] == ""
