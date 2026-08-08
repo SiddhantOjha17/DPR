@@ -36,7 +36,7 @@ def archive(
     date_to = _valid_date(date_to)
 
     query = (
-        "SELECT l.id, l.ct_number, l.material_code, l.fabric, l.total_qty, "
+        "SELECT l.id, l.ct_number, l.material_code, l.fabric, l.total_qty, l.acr, "
         "l.closed_at, b.name AS brand_name "
         "FROM lots l JOIN brands b ON b.id = l.brand_id "
         "WHERE l.closed_at IS NOT NULL"

@@ -20,7 +20,7 @@ def fetch_grouped_positions(conn: sqlite3.Connection, brand_id: int | None) -> d
     query = (
         "SELECT p.lot_id, p.stage_id, p.qty AS stage_qty, p.entered_at, "
         "s.name AS stage_name, s.rank AS stage_rank, "
-        "l.ct_number, l.material_code, l.fabric, l.wash, l.total_qty, l.remark, "
+        "l.ct_number, l.material_code, l.fabric, l.total_qty, l.acr, l.remark, "
         "l.fi_date, l.fabric_date, b.name AS brand_name, sb.name AS sub_brand_name "
         "FROM positions p "
         "JOIN lots l ON l.id = p.lot_id "
@@ -38,13 +38,18 @@ def fetch_grouped_positions(conn: sqlite3.Connection, brand_id: int | None) -> d
     now = datetime.now(timezone.utc)
     groups: dict[int, dict] = {}
     grand_total = 0
+    acr_grand_total = 0
+    seen_lot_ids: set[int] = set()
     for row in conn.execute(query, params):
         entered = datetime.fromisoformat(row["entered_at"])
         days = (now - entered).days
         stage_id = row["stage_id"]
         group = groups.setdefault(
             stage_id,
-            {"stage_name": row["stage_name"], "stage_rank": row["stage_rank"], "rows": [], "subtotal": 0},
+            {
+                "stage_name": row["stage_name"], "stage_rank": row["stage_rank"], "rows": [],
+                "subtotal": 0, "acr_subtotal": 0,
+            },
         )
         group["rows"].append(
             {
@@ -54,22 +59,31 @@ def fetch_grouped_positions(conn: sqlite3.Connection, brand_id: int | None) -> d
                 "ct_number": row["ct_number"],
                 "material_code": row["material_code"],
                 "fabric": row["fabric"],
-                "wash": row["wash"],
                 "remark": row["remark"],
                 "fi_date": row["fi_date"],
                 "fabric_date": row["fabric_date"],
                 "stage_name": row["stage_name"],
                 "stage_qty": row["stage_qty"],
                 "total_qty": row["total_qty"],
+                "acr": row["acr"],
                 "is_split": row["lot_id"] in split_lot_ids,
                 "days": days,
             }
         )
         group["subtotal"] += row["stage_qty"]
+        group["acr_subtotal"] += row["acr"] or 0
         grand_total += row["stage_qty"]
+        # ACR is a flat per-lot value, not split-aware like stage_qty - a split
+        # lot's ACR would otherwise be double-counted here (once per stage it
+        # occupies). Per-group subtotals above are naive on purpose (a lot can
+        # only occupy a given stage once, so no double-count risk there); only
+        # this true grand total needs deduping by lot.
+        if row["lot_id"] not in seen_lot_ids:
+            seen_lot_ids.add(row["lot_id"])
+            acr_grand_total += row["acr"] or 0
 
     ordered_groups = [groups[k] for k in sorted(groups, key=lambda k: groups[k]["stage_rank"])]
-    return {"groups": ordered_groups, "grand_total": grand_total}
+    return {"groups": ordered_groups, "grand_total": grand_total, "acr_grand_total": acr_grand_total}
 
 
 @router.get("/", response_class=HTMLResponse)

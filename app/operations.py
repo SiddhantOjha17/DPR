@@ -126,7 +126,6 @@ def create_lot(
     sub_brand_id: int | None = None,
     material_code: str | None = None,
     fabric: str | None = None,
-    wash: str | None = None,
     fi_date: str | None = None,
     fabric_date: str | None = None,
     remark: str | None = None,
@@ -137,16 +136,15 @@ def create_lot(
     with db.transaction(conn):
         cur = conn.execute(
             "INSERT INTO lots "
-            "(brand_id, sub_brand_id, ct_number, material_code, fabric, wash, "
+            "(brand_id, sub_brand_id, ct_number, material_code, fabric, "
             "total_qty, fi_date, fabric_date, remark, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 brand_id,
                 sub_brand_id,
                 ct_number,
                 material_code,
                 fabric,
-                wash,
                 total_qty,
                 fi_date,
                 fabric_date,
@@ -270,14 +268,16 @@ def update_lot_details(
     remark: str | None = None,
     material_code: str | None = None,
     fabric: str | None = None,
-    wash: str | None = None,
     fi_date: str | None = None,
     fabric_date: str | None = None,
     total_qty: int | None = None,
     ct_number: str | None = None,
+    acr: int | None = None,
 ) -> None:
     with db.transaction(conn):
-        current = conn.execute("SELECT total_qty, ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
+        current = conn.execute(
+            "SELECT total_qty, ct_number, acr FROM lots WHERE id = ?", (lot_id,)
+        ).fetchone()
 
         if total_qty is not None and total_qty != current["total_qty"]:
             if total_qty <= 0:
@@ -308,10 +308,15 @@ def update_lot_details(
                     raise MoveError(f"CT {ct_number} is already used by another lot.")
             conn.execute("UPDATE lots SET ct_number = ? WHERE id = ?", (ct_number, lot_id))
 
+        if acr is not None and acr != current["acr"]:
+            if acr < 0:
+                raise MoveError("ACR must be zero or greater.")
+            conn.execute("UPDATE lots SET acr = ? WHERE id = ?", (acr, lot_id))
+
         conn.execute(
             "UPDATE lots SET sub_brand_id = ?, remark = ?, material_code = ?, fabric = ?, "
-            "wash = ?, fi_date = ?, fabric_date = ? WHERE id = ?",
-            (sub_brand_id, remark, material_code, fabric, wash, fi_date, fabric_date, lot_id),
+            "fi_date = ?, fabric_date = ? WHERE id = ?",
+            (sub_brand_id, remark, material_code, fabric, fi_date, fabric_date, lot_id),
         )
 
 

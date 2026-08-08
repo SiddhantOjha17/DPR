@@ -7,7 +7,6 @@
     <strong>Total qty:</strong> {{ lot.total_qty }}<br>
     <strong>Code:</strong> {{ lot.material_code or "" }}
     &nbsp; <strong>Fabric:</strong> {{ lot.fabric or "" }}
-    &nbsp; <strong>Wash:</strong> {{ lot.wash or "" }}
   </div>
 
   <div class="section">
@@ -52,6 +51,7 @@
       <input type="hidden" name="brand" value="{{ brand or '' }}">
       <label>CT number <input type="text" name="ct_number" value="{{ lot.ct_number or '' }}"></label>
       <label>Qty <input type="number" name="total_qty" value="{{ lot.total_qty }}" min="1" required></label>
+      <label>ACR <input type="number" name="acr" value="{{ lot.acr if lot.acr is not none else '' }}" min="0"></label>
       <label>Sub-brand
         <select name="sub_brand_id">
           <option value="">—</option>
@@ -63,7 +63,6 @@
       <label>Remark <input type="text" name="remark" value="{{ lot.remark or '' }}"></label>
       <label>Material code <input type="text" name="material_code" value="{{ lot.material_code or '' }}"></label>
       <label>Fabric <input type="text" name="fabric" value="{{ lot.fabric or '' }}"></label>
-      <label>Wash <input type="text" name="wash" value="{{ lot.wash or '' }}"></label>
       <label>FI date <input type="date" name="fi_date" value="{{ (lot.fi_date or '')[:10] }}"></label>
       <label>Fab date <input type="date" name="fabric_date" value="{{ (lot.fabric_date or '')[:10] }}"></label>
       <button type="submit">Save</button>

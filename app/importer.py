@@ -24,7 +24,6 @@ COLUMNS = {
     "ct": 3,
     "code": 4,
     "fabric": 5,
-    "wash": 6,
     "qty": 7,
     "remark": 8,
     "fi_date": 9,
@@ -221,21 +220,19 @@ def import_workbook(
                     else:
                         entered_at = created_at
 
-                    wash = _cell(row, COLUMNS["wash"])
                     remark = _cell(row, COLUMNS["remark"])
 
                     cur = conn.execute(
                         "INSERT INTO lots "
-                        "(brand_id, sub_brand_id, ct_number, material_code, fabric, wash, "
+                        "(brand_id, sub_brand_id, ct_number, material_code, fabric, "
                         "total_qty, fi_date, fabric_date, remark, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             brand_id,
                             sub_brand_id,
                             ct_number,
                             str(_cell(row, COLUMNS["code"]) or "") or None,
                             str(_cell(row, COLUMNS["fabric"]) or "") or None,
-                            str(wash) if wash else None,
                             int(qty),
                             _as_date(_cell(row, COLUMNS["fi_date"])),
                             _as_date(_cell(row, COLUMNS["fabric_date"])),

@@ -45,6 +45,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(ddl)
             conn.commit()
 
+    for column, ddl in [("acr", "ALTER TABLE lots ADD COLUMN acr INTEGER")]:
+        if not _column_exists(conn, "lots", column):
+            conn.execute(ddl)
+            conn.commit()
+
     (role_count,) = conn.execute("SELECT COUNT(*) FROM roles").fetchone()
     if role_count == 0:
         conn.execute(

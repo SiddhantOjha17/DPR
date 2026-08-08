@@ -159,3 +159,66 @@ def test_leaving_ct_number_blank_does_not_touch_it(client):
     conn.close()
     assert lot["ct_number"] == "EDITCT3"
     assert lot["remark"] == "just a note"
+
+
+def test_editing_acr_via_the_panel_sets_it(client):
+    lot_id = _add_lot(client, "EDITACR1", 1000)
+
+    resp = client.post(
+        f"/lots/{lot_id}/edit",
+        data={"acr": 900, "brand": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200
+    assert "Saved." in resp.text
+
+    conn = db.get_connection()
+    lot = conn.execute("SELECT acr FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    assert lot["acr"] == 900
+
+
+def test_editing_acr_undo_restores_the_prior_value(client):
+    lot_id = _add_lot(client, "EDITACR2", 1000)
+    client.post(
+        f"/lots/{lot_id}/edit", data={"acr": 900, "brand": ""}, headers={"HX-Request": "true"}
+    )
+
+    edit_resp = client.post(
+        f"/lots/{lot_id}/edit",
+        data={"acr": 750, "brand": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert 'name="acr" value="900"' in edit_resp.text
+
+    undo_resp = client.post(
+        f"/lots/{lot_id}/edit",
+        data={"acr": 900, "brand": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert undo_resp.status_code == 200
+
+    conn = db.get_connection()
+    lot = conn.execute("SELECT acr FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    assert lot["acr"] == 900
+
+
+def test_leaving_acr_blank_never_clears_an_existing_value(client):
+    # Same convention as every other optional field on this route: submitting
+    # it blank means "don't touch it" - there's no way to clear an already-set
+    # ACR back to blank through this form (matches ct_number/total_qty).
+    lot_id = _add_lot(client, "EDITACR3", 1000)
+    client.post(
+        f"/lots/{lot_id}/edit", data={"acr": 900, "brand": ""}, headers={"HX-Request": "true"}
+    )
+
+    client.post(
+        f"/lots/{lot_id}/edit", data={"remark": "just a note", "brand": ""}, headers={"HX-Request": "true"}
+    )
+
+    conn = db.get_connection()
+    lot = conn.execute("SELECT acr, remark FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    conn.close()
+    assert lot["acr"] == 900
+    assert lot["remark"] == "just a note"

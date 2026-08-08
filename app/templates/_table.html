@@ -16,8 +16,8 @@
   <table class="dpr-table">
     <thead>
       <tr>
-        <th>Brand</th><th>Sub-brand</th><th>CT</th><th>Code</th><th>Fabric</th><th>Wash</th>
-        <th>Qty</th><th>Current Stage</th><th>FI Date</th><th>Fab Date</th><th>Remark</th><th>Days</th>
+        <th>Brand</th><th>Sub-brand</th><th>CT</th><th>Code</th><th>Fabric</th>
+        <th>Order Qty</th><th>ACR</th><th>Current Stage</th><th>FI Date</th><th>Fab Date</th><th>Remark</th><th>Days</th>
       </tr>
     </thead>
     <tbody>
@@ -30,8 +30,8 @@
         <td>{{ row.ct_number }}</td>
         <td>{{ row.material_code or "" }}</td>
         <td>{{ row.fabric or "" }}</td>
-        <td>{{ row.wash or "" }}</td>
         <td>{{ row.stage_qty }}{% if row.is_split %} <span class="split-marker">({{ row.stage_qty }} of {{ row.total_qty }})</span>{% endif %}</td>
+        <td>{{ row.acr if row.acr is not none else "" }}</td>
         <td>{{ row.stage_name }}</td>
         <td>{{ (row.fi_date or "")[:10] }}</td>
         <td>{{ (row.fabric_date or "")[:10] }}</td>
@@ -39,12 +39,12 @@
         <td>{{ row.days }}</td>
       </tr>
       {% endfor %}
-      <tr class="stage-subtotal"><td colspan="6">Subtotal</td><td>{{ group.subtotal }}</td><td colspan="5"></td></tr>
+      <tr class="stage-subtotal"><td colspan="5">Subtotal</td><td>{{ group.subtotal }}</td><td>{{ group.acr_subtotal }}</td><td colspan="5"></td></tr>
       {% endfor %}
       {% if not groups %}
       <tr><td colspan="12">No open lots{% if selected_brand %} for this brand{% endif %}. Import your Excel file from Settings to get started.</td></tr>
       {% endif %}
-      <tr class="grand-total"><td colspan="6">Grand total</td><td>{{ grand_total }}</td><td colspan="5"></td></tr>
+      <tr class="grand-total"><td colspan="5">Grand total</td><td>{{ grand_total }}</td><td>{{ acr_grand_total }}</td><td colspan="5"></td></tr>
     </tbody>
   </table>
   </div>

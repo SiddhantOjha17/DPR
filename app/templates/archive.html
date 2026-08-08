@@ -23,7 +23,7 @@
 
   <table class="dpr-table">
     <thead>
-      <tr><th>Brand</th><th>CT</th><th>Code</th><th>Fabric</th><th>Qty</th><th>Shipped</th><th></th></tr>
+      <tr><th>Brand</th><th>CT</th><th>Code</th><th>Fabric</th><th>Order Qty</th><th>ACR</th><th>Shipped</th><th></th></tr>
     </thead>
     <tbody>
       {% for lot in lots %}
@@ -33,6 +33,7 @@
         <td>{{ lot.material_code or "" }}</td>
         <td>{{ lot.fabric or "" }}</td>
         <td>{{ lot.total_qty }}</td>
+        <td>{{ lot.acr if lot.acr is not none else "" }}</td>
         <td>{{ lot.closed_at[:10] }}</td>
         <td>
           <form method="post" action="/lots/{{ lot.id }}/reopen" class="inline">
@@ -42,7 +43,7 @@
       </tr>
       {% endfor %}
       {% if not lots %}
-      <tr><td colspan="7">No shipped lots match.</td></tr>
+      <tr><td colspan="8">No shipped lots match.</td></tr>
       {% endif %}
     </tbody>
   </table>

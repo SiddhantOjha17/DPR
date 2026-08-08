@@ -142,7 +142,6 @@ def add_lot(
     sub_brand_id: str = Form(""),
     material_code: str = Form(""),
     fabric: str = Form(""),
-    wash: str = Form(""),
     fi_date: str = Form(""),
     fabric_date: str = Form(""),
     remark: str = Form(""),
@@ -162,7 +161,6 @@ def add_lot(
             sub_brand_id=int(sub_brand_id) if sub_brand_id else None,
             material_code=material_code or None,
             fabric=fabric or None,
-            wash=wash or None,
             fi_date=fi_date or None,
             fabric_date=fabric_date or None,
             remark=remark or None,
@@ -246,11 +244,11 @@ def edit(
     remark: str = Form(""),
     material_code: str = Form(""),
     fabric: str = Form(""),
-    wash: str = Form(""),
     fi_date: str = Form(""),
     fabric_date: str = Form(""),
     total_qty: str = Form(""),
     ct_number: str = Form(""),
+    acr: str = Form(""),
     brand: str = Form(""),
     _perm=Depends(require_permission("edit")),
 ):
@@ -265,11 +263,11 @@ def edit(
             remark=remark or None,
             material_code=material_code or None,
             fabric=fabric or None,
-            wash=wash or None,
             fi_date=fi_date or None,
             fabric_date=fabric_date or None,
             total_qty=int(total_qty) if total_qty else None,
             ct_number=ct_number or None,
+            acr=int(acr) if acr else None,
         )
     except MoveError as e:
         return _render_panel(request, conn, lot_id, brand_id, error_message=str(e))
@@ -284,11 +282,11 @@ def edit(
             "remark": before["remark"] or "",
             "material_code": before["material_code"] or "",
             "fabric": before["fabric"] or "",
-            "wash": before["wash"] or "",
             "fi_date": (before["fi_date"] or "")[:10],
             "fabric_date": (before["fabric_date"] or "")[:10],
             "total_qty": before["total_qty"],
             "ct_number": before["ct_number"] or "",
+            "acr": before["acr"] if before["acr"] is not None else "",
         },
     )
 

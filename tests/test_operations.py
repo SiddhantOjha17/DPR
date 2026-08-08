@@ -462,3 +462,43 @@ def test_editing_ct_number_to_blank_is_allowed(conn, brand_ids, stage_ids, user_
     operations.update_lot_details(conn, lot_id=lot_id, ct_number="")
     lot = conn.execute("SELECT ct_number FROM lots WHERE id = ?", (lot_id,)).fetchone()
     assert lot["ct_number"] == ""
+
+
+# --- Editing a lot's ACR ---
+
+def test_editing_acr_sets_the_value(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id)
+    operations.update_lot_details(conn, lot_id=lot_id, acr=900)
+    lot = conn.execute("SELECT acr FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["acr"] == 900
+
+
+def test_new_lot_starts_with_no_acr(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id)
+    lot = conn.execute("SELECT acr FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["acr"] is None
+
+
+def test_editing_acr_to_the_same_value_is_a_no_op(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id)
+    operations.update_lot_details(conn, lot_id=lot_id, acr=500)
+    operations.update_lot_details(conn, lot_id=lot_id, acr=500)
+    lot = conn.execute("SELECT acr FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["acr"] == 500
+
+
+def test_editing_acr_rejects_negative(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id)
+    with pytest.raises(operations.MoveError, match="zero or greater"):
+        operations.update_lot_details(conn, lot_id=lot_id, acr=-1)
+    lot = conn.execute("SELECT acr FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["acr"] is None  # unchanged
+
+
+def test_editing_unrelated_fields_never_touches_acr(conn, brand_ids, stage_ids, user_id):
+    lot_id = _create_lot(conn, brand_ids, stage_ids, user_id)
+    operations.update_lot_details(conn, lot_id=lot_id, acr=750)
+    operations.update_lot_details(conn, lot_id=lot_id, remark="checked")
+    lot = conn.execute("SELECT acr, remark FROM lots WHERE id = ?", (lot_id,)).fetchone()
+    assert lot["acr"] == 750
+    assert lot["remark"] == "checked"
